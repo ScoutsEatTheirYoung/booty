@@ -1,7 +1,7 @@
-
 local mq = require('mq')
 local corpse = require('booty.corpse')
 local helpers = require('booty.helpers')
+local config = require('booty.config')
 
 local loot = {}
 
@@ -20,15 +20,15 @@ function loot.open_corpse_by_id(corpse_id)
         return false
     end
 
-        -- Distance Check: You must be within ~15 units to open a corpse
-    if mq.TLO.Target.Distance() > 18 then
+    -- Distance Check: You must be within loot range to open a corpse
+    if mq.TLO.Target.Distance() > config.get().loot.max_distance then
         helpers.error("Too far away to loot (" .. mq.TLO.Target.Distance() .. ")")
         return false
     end
 
     -- Open the loot window
     mq.cmd('/loot')
-    mq.delay(2000, function() return mq.TLO.Window('LootWnd').Open() end)
+    mq.delay(config.get().loot.window_open_timeout, function() return mq.TLO.Window('LootWnd').Open() end)
 
     -- Check if we successfully opened it
     if (mq.TLO.Target.ID() == corpse_id) and (mq.TLO.Window('LootWnd').Open()) then
@@ -44,13 +44,14 @@ function loot.loot_from_open_window()
     helpers.info("Looting items from open loot window")
     local total_items = mq.TLO.Corpse.Items() or 0
     helpers.info(string.format("Found %d items to loot", total_items))
+    local cfg = config.get().loot
     for i = total_items, 1, -1 do
-        mq.delay(50) -- small delay to avoid overwhelming MQ2
+        mq.delay(cfg.item_loot_delay)
         local item = mq.TLO.Corpse.Item(i)
         if item() and loot.check_if_should_loot_item(item) then
             helpers.info(string.format("Looting item: %s (ID: %d)", item.Name(), item.ID()))
             mq.cmdf('/notify LootWnd LW_LootSlot%d rightmouseup', i - 1)
-            mq.delay(1000, function() return not mq.TLO.Corpse.Item(i)() end)
+            mq.delay(cfg.item_transfer_timeout, function() return not mq.TLO.Corpse.Item(i)() end)
         end
     end
 end
@@ -86,7 +87,7 @@ end
 function loot.close_loot_window()
     if mq.TLO.Window('LootWnd').Open() then
         mq.TLO.Window('LootWnd').DoClose()
-        mq.delay(2000, function() return not mq.TLO.Window('LootWnd').Open() end)
+        mq.delay(config.get().loot.corpse_close_timeout, function() return not mq.TLO.Window('LootWnd').Open() end)
     end
 
     return not mq.TLO.Window('LootWnd').Open()
@@ -145,7 +146,7 @@ function loot.all(radius, zradius)
             helpers.info(string.format('Looting corpse ID %d...', c.id))
             
             if loot.open_corpse_by_id(c.id) then
-                mq.delay(200) -- Stabilize
+                mq.delay(config.get().loot.item_loot_delay) -- Stabilize
                 loot.loot_from_open_window()
             end
             
@@ -163,12 +164,12 @@ function loot.white(filter, radius, zradius)
             helpers.info(string.format('Checking corpse ID %d against white filter...', c.id))
             
             if loot.open_corpse_by_id(c.id) then
-                mq.delay(200) -- Stabilize
+                mq.delay(config.get().loot.item_loot_delay) -- Stabilize
                 local shouldLoot = false
 
                 local total_items = mq.TLO.Corpse.Items() or 0
                 for i = total_items, 1, -1 do
-                    mq.delay(50) -- small delay to avoid overwhelming MQ2
+                    mq.delay(config.get().loot.item_loot_delay)
                     local item = mq.TLO.Corpse.Item(i)
                     if item() and filter:matches(item) then
                         shouldLoot = true
@@ -199,12 +200,12 @@ function loot.black(filter, radius, zradius)
             helpers.info(string.format('Checking corpse ID %d against black filter...', c.id))
             
             if loot.open_corpse_by_id(c.id) then
-                mq.delay(200) -- Stabilize
+                mq.delay(config.get().loot.item_loot_delay) -- Stabilize
                 local shouldLoot = true
 
                 local total_items = mq.TLO.Corpse.Items() or 0
                 for i = total_items, 1, -1 do
-                    mq.delay(50) -- small delay to avoid overwhelming MQ2
+                    mq.delay(config.get().loot.item_loot_delay)
                     local item = mq.TLO.Corpse.Item(i)
                     if item() and filter:matches(item) then
                         shouldLoot = false

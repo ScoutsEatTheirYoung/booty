@@ -1,6 +1,7 @@
 local mq = require('mq')
 
 local helpers = require('booty.helpers')
+local config = require('booty.config')
 local corpse = require('booty.corpse')
 local loot = require('booty.loot')
 
@@ -33,9 +34,10 @@ function sell.bag_items(bag_index)
     -- 3. THE LOOP
     -- bag.Container() returns the number of slots in that bag (e.g., 8, 10, 20)
     helpers.info("Selling from " .. bag())
+    local cfg = config.get().sell
     for i = 1, bag.Container() do
         local item = bag.Item(i)
-        
+
         -- Only attempt to sell if an item exists in this slot
         if item() then
             helpers.info("  Selling: " .. item.Name())
@@ -43,25 +45,22 @@ function sell.bag_items(bag_index)
             -- STEP A: SELECT THE ITEM
             -- Syntax: /itemnotify in <bag_name> <slot_number> leftmouseup
             mq.cmdf('/itemnotify in %s %d leftmouseup', bag_str, i)
-            
+
             -- Wait for the item to be "Selected" (The game highlights it)
-            mq.delay(200)
+            mq.delay(cfg.select_delay)
 
             -- STEP B: CLICK THE SELL BUTTON
             -- We hold 'shift' to auto-confirm stack selling (prevents quantity popup)
             mq.cmd('/notify MerchantWnd MW_Sell_Button leftmouseup')
-            mq.delay(200, function() return mq.TLO.Window('QuantityWnd').Open() end)
+            mq.delay(cfg.sell_timeout, function() return mq.TLO.Window('QuantityWnd').Open() end)
             if mq.TLO.Window('QuantityWnd').Open() then
                 -- Click "Sell" (or Accept) inside the quantity window
                 mq.cmd('/notify QuantityWnd QTYW_Accept_Button leftmouseup')
             end
-            
+
             -- STEP C: WAIT FOR IT TO VANISH
             -- We wait until that specific slot is empty
-            mq.delay(1000, function() return not mq.TLO.Me.Inventory('pack'..bag_index).Item(i)() end)
-            
-            -- Safety delay for server sync
-            mq.delay(50)
+            mq.delay(cfg.item_vanish_timeout, function() return not mq.TLO.Me.Inventory('pack'..bag_index).Item(i)() end)
         end
     end
     

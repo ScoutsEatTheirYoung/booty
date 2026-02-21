@@ -1,6 +1,7 @@
 local mq = require('mq')
 
 local helpers = require('booty.helpers')
+local config = require('booty.config')
 local corpse = require('booty.corpse')
 local loot = require('booty.loot')
 local sell = require('booty.sell')
@@ -15,8 +16,9 @@ local commands = {}
 
 -- /lua run booty corpses
 function commands.corpses(args)
-    local radius = tonumber(args[2]) or 30
-    local zradius = tonumber(args[3]) or 10
+    local cfg = config.get().corpse
+    local radius = tonumber(args[2]) or cfg.default_radius
+    local zradius = tonumber(args[3]) or cfg.default_zradius
 
     local corpses = corpse.get_all(radius, zradius)
     if #corpses == 0 then
@@ -37,7 +39,8 @@ function commands.loot(args)
         helpers.print('booty loot - Loot items from nearest corpse')
         return
     elseif args[2] == 'all' then
-        loot.all(30, 10)
+        local cfg = config.get().corpse
+        loot.all(cfg.default_radius, cfg.default_zradius)
         return
 
     elseif args[2] == 'white' or args[2] == 'black' then
@@ -75,7 +78,56 @@ function commands.sell(args)
     end
 end
 
--- /lua run filter [cmd]
+-- /lua run booty config [cmd]
+function commands.config(args)
+    if args[2] == 'dump' or args[2] == 'show' then
+        config.dump()
+    elseif args[2] == 'reload' then
+        config.reload()
+        helpers.success('Configuration reloaded')
+    elseif args[2] == 'save' then
+        config.save()
+    elseif args[2] == 'get' then
+        local path = args[3]
+        if not path then
+            helpers.error('Usage: /lua run booty config get <path>')
+            helpers.info('Example: /lua run booty config get loot.max_distance')
+            return
+        end
+        local value = config.value(path)
+        helpers.info(string.format('%s = %s', path, tostring(value)))
+    elseif args[2] == 'set' then
+        local path = args[3]
+        local value = args[4]
+        if not path or not value then
+            helpers.error('Usage: /lua run booty config set <path> <value>')
+            helpers.info('Example: /lua run booty config set loot.max_distance 20')
+            return
+        end
+        -- Try to convert to number or boolean
+        if tonumber(value) then
+            value = tonumber(value)
+        elseif value == 'true' then
+            value = true
+        elseif value == 'false' then
+            value = false
+        end
+        config.set(path, value, true) -- auto-save
+        helpers.success(string.format('Set %s = %s', path, tostring(value)))
+    elseif args[2] == 'path' then
+        helpers.info('Config file: ' .. config.get_user_config_path())
+    else
+        helpers.print('Config commands:')
+        helpers.info('  dump/show  - Display current configuration')
+        helpers.info('  reload     - Reload configuration from disk')
+        helpers.info('  save       - Save current configuration to disk')
+        helpers.info('  get <path> - Get a config value (e.g., loot.max_distance)')
+        helpers.info('  set <path> <value> - Set and save a config value')
+        helpers.info('  path       - Show config file location')
+    end
+end
+
+-- /lua run booty filter [cmd]
 function commands.filter(args)
     if args[2] == 'create' then
         local filterName = args[3]
@@ -84,6 +136,24 @@ function commands.filter(args)
             return
         end
         filter.create_skeleton(filterName)
+    elseif args[2] == 'gui' then
+        local FilterGUI = require('booty.filter.gui')
+        FilterGUI.run()
+    elseif args[2] == 'test' then
+        local filterName = args[3]
+        if not filterName then
+            helpers.error('Please provide a filter name. Usage: /lua run booty filter test [filterName]')
+            return
+        end
+        local loadedFilter = filter.load(filterName)
+        if loadedFilter then
+            filter.TestInventory(loadedFilter)
+        end
+    else
+        helpers.print('Filter commands:')
+        helpers.info('  gui              - Open the filter editor GUI')
+        helpers.info('  create <name>    - Create a new filter skeleton')
+        helpers.info('  test <name>      - Test a filter against inventory')
     end
 end
 
@@ -91,22 +161,23 @@ end
 -- this is mostly for me to test stuff during development
 function commands.test(args)
     helpers.info('Running booty test command ' .. helpers.table_to_string(args))
+    local cfg = config.get().corpse
     if args[2] == 'lootall' then
-        loot.all(30, 10)
+        loot.all(cfg.default_radius, cfg.default_zradius)
     elseif args[2] == 'corpses' then
-        local corpses = corpse.get_all(30, 10)
+        local corpses = corpse.get_all(cfg.default_radius, cfg.default_zradius)
         for _, c in ipairs(corpses) do
             print(helpers.table_to_string(c))
         end
     elseif args[2] == 'lootlistall' then
         local start_time = os.clock()
-        local loot_list = loot.get_loot_list_from_all_corpses(30, 10)
+        local loot_list = loot.get_loot_list_from_all_corpses(cfg.default_radius, cfg.default_zradius)
         helpers.print(helpers.table_to_string(loot_list))
         local elapsed_ms = (os.clock() - start_time) * 1000
         print(string.format("Function took: %.2f ms", elapsed_ms))
     elseif args[2] == 'opencorpse' then
         local start_time = os.clock()
-        local corpses = corpse.get_all(30, 10)
+        local corpses = corpse.get_all(cfg.default_radius, cfg.default_zradius)
         print(helpers.table_to_string(corpses[1]))
         local open = loot.open_corpse_by_id(corpses[1].id)
         print('Opened: ' .. tostring(open))

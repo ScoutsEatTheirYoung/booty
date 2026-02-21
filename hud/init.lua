@@ -1,10 +1,15 @@
 local mq = require('mq')
 local ImGui = require('ImGui')
+local config = require('booty.config')
 local Ticker = require('booty.hud.ticker')
 local TickerStyles = require('booty.hud.ticker.styles')
+local PlayerFrame = require('booty.hud.frames.player')
+local FPSFrame = require('booty.hud.frames.fps')
 
-local openGUI = true
-local myTicker = Ticker.new(500, 40, 120, 30)
+local cfg = config.get().hud
+local openGUI = cfg.enabled
+local tickerCfg = cfg.ticker
+local myTicker = Ticker.new(tickerCfg.width, tickerCfg.y_position, tickerCfg.fov, tickerCfg.height)
 
 -- =========================================================
 -- THE RENDERER (Fast - 60+ FPS)
@@ -19,7 +24,15 @@ local function HUD_Loop()
     if ImGui.Begin("BootyHUD", true, flags) then
         local me = mq.TLO.Me
         if me() then
-            myTicker:draw(me, ImGui.GetForegroundDrawList())
+            if cfg.ticker.enabled then
+                myTicker:draw(me, ImGui.GetForegroundDrawList())
+            end
+            if cfg.player_frame.enabled then
+                PlayerFrame.draw(me)
+            end
+        end
+        if cfg.fps.enabled then
+            FPSFrame.draw()
         end
     end
     ImGui.End()

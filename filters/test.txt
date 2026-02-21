@@ -1,0 +1,94 @@
+# ==============================================================================
+#  BOOTY FILTER: test# ==============================================================================
+#
+#  SYNTAX RULES:
+#    - Lines starting with '#' are COMMENTS and are ignored.
+#    - BLANK lines are ignored.
+#    - Leading and trailing whitespace is automatically trimmed.
+#
+#  MATCHING LOGIC:
+#    The script reads this file from TOP to BOTTOM.
+#    The FIRST rule that matches an item returns "TRUE" (Match Found).
+#
+#  WHITELIST vs. BLACKLIST (The Consequence):
+#    This file defines "What Matches". The result depends on your mode:
+#
+#    1. WHITELIST MODE (Inclusive):
+#       "If it MATCHES, DO the action."
+#       - Looting: Match = Loot it.
+#       - Selling: Match = Sell it.
+#
+#    2. BLACKLIST MODE (Exclusive / Safety):
+#       "If it MATCHES, Do NOT do the action."
+#       - Looting: Match = Do NOT Loot (Ignore).
+#       - Selling: Match = Do NOT Sell (Safe/Keep).
+#
+# ==============================================================================
+#  INSTRUCTIONS:
+#    Name:      Matches exact item name (Default if no prefix used)
+#    Pattern:   Matches Lua Regex pattern
+#    Value:     Matches sell value (pp, gp, sp, cp)
+#    Flag:      Matches boolean properties (NoDrop, Lore, Magic, Aug, Quest)
+#    Slot:      Matches if item fits in a specific slot (Head, Ammo, Charm)
+#    AugType:   Matches specific Augment Type integer (7, 8, etc)
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. SPECIAL ITEMS (Flags & Types)
+# ------------------------------------------------------------------------------
+
+# Example: Match all Quest/NoDrop items
+# Flag: NoDrop
+
+# Example: Match all Augments
+# Flag: Aug
+
+# Example: Match standard gear augs
+# AugType: 7
+# AugType: 8
+
+# ------------------------------------------------------------------------------
+# 2. ASCENDANT / CUSTOM SERVER PATTERNS
+# ------------------------------------------------------------------------------
+# For full documentation on Lua Patterns, visit:
+# https://www.lua.org/manual/5.1/manual.html#5.4.1
+#
+# Note: % is the escape character in Lua.
+# Pattern: %s matches a space. Pattern: %( matches a literal parenthesis.
+
+# Pattern: %s%(Enhanced%)$
+# Pattern: %s%(Exalted%)$
+# Pattern: %s%(Ascendant%)$
+
+# ------------------------------------------------------------------------------
+# 3. VALUE THRESHOLDS
+# ------------------------------------------------------------------------------
+
+# Example: Match anything worth more than 50 Platinum
+# Value: >= 50pp
+
+# Example: Match anything worth less than 1 Gold
+# Value: < 1gp
+
+# ------------------------------------------------------------------------------
+# 4. SLOT FILTERING
+# ------------------------------------------------------------------------------
+
+# Example: Match anything that goes in the Ammo slot
+# Slot: Ammo
+
+# Example: Match anything that goes in the Charm slot
+# Slot: Charm
+
+# ------------------------------------------------------------------------------
+# 5. EXACT NAMES
+# ------------------------------------------------------------------------------
+
+# You can use the prefix 'Name:' or just type the name directly.
+# Bone Chips
+# Spider Silk
+# High Quality Bear Skin
+# Diamond
+# Blue Diamond
+
+# End of Filter
