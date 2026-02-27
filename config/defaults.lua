@@ -111,7 +111,7 @@ return {
         check_interval = 1000,
 
         -- Re-buff when duration falls below this (seconds)
-        rebuff_threshold = 60,
+        rebuff_threshold = 300,
     },
 
     -- =====================================================================

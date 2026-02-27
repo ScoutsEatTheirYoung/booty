@@ -1,0 +1,17 @@
+{
+  "Lua.runtime.version": "LuaJIT",
+  "Lua.workspace.library": [
+    "~/wine-eq/drive_c/MQ2/mq-definitions",
+    "~/wine-eq/drive_c/MQ2/lua",
+  ],
+  "Lua.diagnostics.globals": [
+    "mq",
+    "eq",
+    "mq2",
+    "mq2data",
+    "mq2nav",
+    "mq2spawn",
+    "mq2zone",
+  ],
+  "Lua.codeLens.enable": true
+}
