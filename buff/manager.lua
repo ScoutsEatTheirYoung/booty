@@ -1,5 +1,5 @@
 local mq = require('mq')
-local helpers = require('booty.helpers')
+local utils = require('booty.utils')
 local config = require('booty.config')
 
 local BuffManager = {}
@@ -36,13 +36,13 @@ function BuffManager.acquireTarget(targetName)
 end
 
 function BuffManager.swapAndCast(spellName, targetName, gemNum)
-    helpers.info(string.format("Preparing to cast '%s' on '%s' using gem %d.", spellName, targetName, gemNum))
+    utils.info(string.format("Preparing to cast '%s' on '%s' using gem %d.", spellName, targetName, gemNum))
     local cfg = config.get().buff
     local spell = mq.TLO.Spell(spellName)
 
     -- 1. Pre-Flight Math: Do we have the mana? Does the spell even exist?
     if not spell() or mq.TLO.Me.CurrentMana() < spell.Mana() then
-        helpers.info(string.format("Cannot cast '%s'. Spell not found or insufficient mana.", spellName))
+        utils.info(string.format("Cannot cast '%s'. Spell not found or insufficient mana.", spellName))
         return -- Exit immediately. The loop will naturally try again next tick.
     end
 
@@ -50,39 +50,39 @@ function BuffManager.swapAndCast(spellName, targetName, gemNum)
 
     -- 2. Scribe or Cooldown Check
     if not isMemmed then
-        --helpers.info(string.format("'%s' is not currently memorized. Attempting to scribe into gem %d.", spellName, gemNum))
+        --utils.info(string.format("'%s' is not currently memorized. Attempting to scribe into gem %d.", spellName, gemNum))
         mq.cmd(string.format("/memspell %d %q", gemNum, spellName))
 
         -- Wait for it to populate in the gem slot
         mq.delay(cfg.memorize_timeout, function() return mq.TLO.Me.Gem(gemNum)() == spellName end)
-        --helpers.info(string.format("'%s' is now memorized in gem %d.", spellName, gemNum))
+        --utils.info(string.format("'%s' is now memorized in gem %d.", spellName, gemNum))
 
     else
         -- If it was already memorized, ensure the gem isn't greyed out from a previous cast
         gemNum = mq.TLO.Me.Gem(spellName)()
-        --helpers.info(string.format("'%s' is already memorized in gem %d. Checking if it's ready to cast.", spellName, gemNum))
+        --utils.info(string.format("'%s' is already memorized in gem %d. Checking if it's ready to cast.", spellName, gemNum))
         if not gemNum then
             return -- This should never happen, but if it does, exit to prevent errors.
         end
     end
 
-    --helpers.info(string.format("Waiting for '%s' in gem %d to be ready to cast.", spellName, gemNum))
+    --utils.info(string.format("Waiting for '%s' in gem %d to be ready to cast.", spellName, gemNum))
     mq.delay(cfg.ready_timeout, function() return mq.TLO.Me.SpellReady(gemNum)() end)
-    --helpers.info(string.format("'%s' in gem %d is ready to cast.", spellName, gemNum))
+    --utils.info(string.format("'%s' in gem %d is ready to cast.", spellName, gemNum))
 
     if targetName ~= "pet_summon" then
         BuffManager.acquireTarget(targetName)
     else
-        helpers.info("Casting a pet summon. No target acquisition necessary.")
+        utils.info("Casting a pet summon. No target acquisition necessary.")
     end
 
-    helpers.info(string.format("Casting '%s' from gem %d on target '%s'.", spellName, gemNum, targetName))
+    utils.info(string.format("Casting '%s' from gem %d on target '%s'.", spellName, gemNum, targetName))
     mq.cmd(string.format("/cast %q", spellName))
 
     -- Give the server time to confirm we started casting
     mq.delay(cfg.cast_start_timeout, function() return mq.TLO.Me.Casting() ~= nil end)
 
-    --helpers.info(string.format("Cast command issued for '%s'. Waiting for cast to complete.", spellName))
+    --utils.info(string.format("Cast command issued for '%s'. Waiting for cast to complete.", spellName))
 
     -- ONLY wait for the cast to finish if the casting bar actually appeared.
     -- If we fizzled or got instantly bashed, this skips the wait and recovers immediately.
@@ -98,7 +98,7 @@ end
 -- and an optional minimum duration threshold (in seconds) to determine if we should re-cast the buff before it expires.
 function BuffManager.needBuff(targetName, buffName, minDuration)
     minDuration = minDuration or config.get().buff.rebuff_threshold
-    helpers.info(string.format("Checking if %s needs buff '%s' with at least %d seconds remaining.", targetName, buffName, minDuration))
+    utils.info(string.format("Checking if %s needs buff '%s' with at least %d seconds remaining.", targetName, buffName, minDuration))
     local buffDuration = 0
     if targetName == "self" then
         local buff = mq.TLO.Me.Buff(buffName)
@@ -108,12 +108,12 @@ function BuffManager.needBuff(targetName, buffName, minDuration)
     elseif targetName == "pet" then
         local pet = mq.TLO.Me.Pet
         if pet() == 'NO PET' then
-            helpers.info("No pet found when checking buffs. Returning false.")
+            utils.info("No pet found when checking buffs. Returning false.")
             return false
         end
         buffDuration = pet.BuffDuration(buffName)()
         if not buffDuration then
-            helpers.info(string.format("Buff '%s' not found on pet. Returning true.", buffName))
+            utils.info(string.format("Buff '%s' not found on pet. Returning true.", buffName))
             return true
         end
         if buffDuration > 0 then
@@ -122,12 +122,12 @@ function BuffManager.needBuff(targetName, buffName, minDuration)
     else
         local spawn = mq.TLO.Spawn(string.format("pc =%s", targetName))
         if not spawn() then
-            helpers.info(string.format("Target '%s' not found when checking buffs. Returning false.", targetName))
+            utils.info(string.format("Target '%s' not found when checking buffs. Returning false.", targetName))
             return false
         end
         return true -- getting buff duration on other players is unreliable, so if they exist, just assume they need the buff
     end
-    helpers.info(string.format("Buff '%s' on '%s' has %d seconds remaining.", buffName, targetName, buffDuration))
+    utils.info(string.format("Buff '%s' on '%s' has %d seconds remaining.", buffName, targetName, buffDuration))
     return buffDuration < minDuration
 end
 
@@ -138,7 +138,7 @@ function BuffManager.checkAndCast(buff_list, gem)
     for _, buff in ipairs(buff_list) do
         -- Iterate through the new targets array
         for _, targetName in ipairs(buff.targets) do
-            helpers.info(string.format("%s : %s", buff.name, targetName))
+            utils.info(string.format("%s : %s", buff.name, targetName))
             if targetName == "pet_summon" then
                 if not BuffManager.hasPet() then
                     BuffManager.swapAndCast(buff.name, targetName, gem) -- Scribe and cast the summon
@@ -148,7 +148,7 @@ function BuffManager.checkAndCast(buff_list, gem)
                 if targetName == "pet" and not BuffManager.hasPet() then
                     -- Skip
                 elseif BuffManager.needBuff(targetName, buff.name) then
-                    helpers.info(string.format("'%s' does not have buff '%s'. Casting now.", targetName, buff.name))
+                    utils.info(string.format("'%s' does not have buff '%s'. Casting now.", targetName, buff.name))
                     BuffManager.swapAndCast(buff.name, targetName, gem)
                 end
             end

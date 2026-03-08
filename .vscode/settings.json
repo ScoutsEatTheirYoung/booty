@@ -3,6 +3,7 @@
   "Lua.workspace.library": [
     "~/wine-eq/drive_c/MQ2/mq-definitions",
     "~/wine-eq/drive_c/MQ2/lua",
+    "/home/julian/.config/Code/User/globalStorage/zenithcodeforge.mq-defs/file-downloader-downloads/macroquest/mq-definitions-master"
   ],
   "Lua.diagnostics.globals": [
     "mq",
@@ -13,5 +14,6 @@
     "mq2spawn",
     "mq2zone",
   ],
-  "Lua.codeLens.enable": true
+  "Lua.codeLens.enable": true,
+  "mq-defs.shaKey": "c95a31364a801d042da428a58831e145a9ef7a31"
 }

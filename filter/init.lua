@@ -1,6 +1,7 @@
 local mq = require('mq')
 local Parser = require('booty.filter.parser')
-local helpers = require('booty.helpers')
+local utils = require('booty.utils')
+local lfs = require('lfs')
 
 local Filter = {}
 Filter.__index = Filter
@@ -13,8 +14,25 @@ Filter.__index = Filter
 function Filter.new(name)
     local self = setmetatable({}, Filter)
     self.name = name
+    -- self.text is the raw text of the filter file, which can be edited in the GUI. It is not used for matching logic, but can be useful for display and editing purposes.
+    self.text = ""
+    -- self.rules is an array of functions that take an item and return TRUE if it matches the filter
     self.rules = {}
     return self
+end
+
+-- Find all filters in the default folder
+function Filter.getAllFilters()
+    local filters = {}
+    local folder = string.format("%s/lua/booty/filters/", mq.TLO.MacroQuest.Path())
+
+    for file in lfs.dir(folder) do
+        if file:match("%.txt$") then
+            table.insert(filters, (file:gsub("%.txt$", "")))
+        end
+    end
+
+    return filters
 end
 
 -- Loads a filter from disk
@@ -24,19 +42,20 @@ function Filter.load(filterName)
     
     local f = io.open(path, "r")
     if not f then
-        printf("\ar[Booty]\ax Filter file not found: %s", path)
-        return nil 
+        utils.error(string.format("Filter file not found: %s", path))
+        return nil
     end
 
     for line in f:lines() do
-        local ruleFunc = Parser.parse_line(line)
+        instance.text = instance.text .. line .. "\n"
+        local ruleFunc = Parser.parse_line(line, true)
         if ruleFunc then
             table.insert(instance.rules, ruleFunc)
         end
     end
     f:close()
     
-    printf("\ag[Booty]\ax Loaded filter '%s' with %d rules.", filterName, #instance.rules)
+    utils.success(string.format("Loaded filter '%s' with %d rules.", filterName, #instance.rules))
     return instance
 end
 
@@ -62,7 +81,7 @@ function Filter.create_skeleton(filterName)
     
     local f = io.open(path, "w")
     if not f then
-        printf("\ar[Booty]\ax Could not create file at %s. (Does the 'filters' folder exist?)", path)
+        utils.error(string.format("Could not create file at %s. (Does the 'filters' folder exist?)", path))
         return false
     end
 
@@ -167,7 +186,7 @@ function Filter.create_skeleton(filterName)
     f:write(content)
     f:close()
     
-    printf("\ag[Booty]\ax Created detailed skeleton file: \at%s\ax", path)
+    utils.success(string.format("Created skeleton file: \at%s\ax", path))
     return true
 end
 
@@ -178,11 +197,11 @@ end
 -- Accepts a fully loaded Filter Object (not just a string name)
 function Filter.TestInventory(filter)
     if not filter or type(filter.matches) ~= "function" then
-        helpers.error("Invalid Filter Object passed to TestInventory")
+        utils.error("Invalid Filter Object passed to TestInventory")
         return
     end
     
-    printf("\ay[Booty]\ax Running Inventory Test against filter: \at%s\ax", filter.name or "Unnamed")
+    utils.info(string.format("Running Inventory Test against filter: \at%s\ax", filter.name or "Unnamed"))
 
     local matchCount = 0
     local totalItems = 0
@@ -194,10 +213,9 @@ function Filter.TestInventory(filter)
             
             if filter:matches(item) then
                 matchCount = matchCount + 1
-                printf("\ag[MATCH]\ax %s: %s \aw(%s)\ax", locationName, item.Name(), item.Value()/1000 .. "pp")
+                utils.pass(string.format("\ag%s\ax — %s \aw(%.2fpp)\ax", item.Name(), locationName, item.Value()/1000))
             else
-                -- Optional: Uncomment to see what is being ignored
-                printf("\ar[IGNORE]\ax %s: %s \aw(%s)\ax", locationName, item.Name(), item.Value()/1000 .. "pp")
+                utils.fail(string.format("\ar%s\ax — %s \aw(%.2fpp)\ax", item.Name(), locationName, item.Value()/1000))
             end
         end
     end
@@ -221,7 +239,7 @@ function Filter.TestInventory(filter)
     end
 
     print("---------------------------------------------------")
-    printf("\ayTest Complete.\ax Matched \ag%d\ax out of \aw%d\ax items.", matchCount, totalItems)
+    utils.info(string.format("Test complete. Matched \ag%d\ax of \aw%d\ax items.", matchCount, totalItems))
 end
 
 return Filter

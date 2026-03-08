@@ -1,6 +1,6 @@
 local mq = require('mq')
 local corpse = require('booty.corpse')
-local helpers = require('booty.helpers')
+local utils = require('booty.utils')
 local config = require('booty.config')
 
 local loot = {}
@@ -16,13 +16,13 @@ function loot.open_corpse_by_id(corpse_id)
 
     -- Check if we successfully targeted it
     if mq.TLO.Target.ID() ~= corpse_id then
-        helpers.error("Could not target corpse ID " .. corpse_id)
+        utils.error("Could not target corpse ID " .. corpse_id)
         return false
     end
 
     -- Distance Check: You must be within loot range to open a corpse
     if mq.TLO.Target.Distance() > config.get().loot.max_distance then
-        helpers.error("Too far away to loot (" .. mq.TLO.Target.Distance() .. ")")
+        utils.error("Too far away to loot (" .. mq.TLO.Target.Distance() .. ")")
         return false
     end
 
@@ -41,15 +41,14 @@ end
 
 -- Vacuum function to check every item on the opened loot window
 function loot.loot_from_open_window()
-    helpers.info("Looting items from open loot window")
     local total_items = mq.TLO.Corpse.Items() or 0
-    helpers.info(string.format("Found %d items to loot", total_items))
+    utils.info(string.format("[Loot] Scanning \ay%d\ax item(s) on corpse", total_items))
     local cfg = config.get().loot
     for i = total_items, 1, -1 do
         mq.delay(cfg.item_loot_delay)
         local item = mq.TLO.Corpse.Item(i)
         if item() and loot.check_if_should_loot_item(item) then
-            helpers.info(string.format("Looting item: %s (ID: %d)", item.Name(), item.ID()))
+            utils.pass(string.format("[Loot] Looting \ag%s\ax (ID: %d, slot %d)", item.Name(), item.ID(), i))
             mq.cmdf('/notify LootWnd LW_LootSlot%d rightmouseup', i - 1)
             mq.delay(cfg.item_transfer_timeout, function() return not mq.TLO.Corpse.Item(i)() end)
         end
@@ -58,12 +57,12 @@ end
 
 function loot.check_if_should_loot_item(item)
     if(not item()) then
-        helpers.error("Invalid item passed to loot.check_loot_item")
+        utils.error("[Loot] Invalid item passed to check_if_should_loot_item")
         return false
     end
 
     if(loot.loot_lore_check(item) == false) then
-        helpers.info("Skipping: " .. item.Name() .. " (Lore & Owned)")
+        utils.fail(string.format("[Loot] Skip \ar%s\ax — lore item already owned", item.Name()))
         return false
     end
 
@@ -143,86 +142,54 @@ function loot.all(radius, zradius)
     for _, c in ipairs(corpses) do
         -- LIVE CHECK: verify the ID still exists in the game world
         if mq.TLO.Spawn(c.id)() then
-            helpers.info(string.format('Looting corpse ID %d...', c.id))
-            
+            utils.info(string.format('[Loot] Opening corpse \ayID %d\ax...', c.id))
+
             if loot.open_corpse_by_id(c.id) then
                 mq.delay(config.get().loot.item_loot_delay) -- Stabilize
                 loot.loot_from_open_window()
             end
-            
+
             loot.close_loot_window()
         end
     end
 end
 
-function loot.white(filter, radius, zradius)
+function loot.with_filter(filter, radius, zradius)
     local corpses = corpse.get_all(radius, zradius)
-    
+    local cfg = config.get().loot
+
     for _, c in ipairs(corpses) do
         -- LIVE CHECK: verify the ID still exists in the game world
         if mq.TLO.Spawn(c.id)() then
-            helpers.info(string.format('Checking corpse ID %d against white filter...', c.id))
-            
+            utils.info(string.format('[Loot] Checking corpse \ayID %d\ax against filter...', c.id))
+
             if loot.open_corpse_by_id(c.id) then
-                mq.delay(config.get().loot.item_loot_delay) -- Stabilize
-                local shouldLoot = false
+                mq.delay(cfg.item_loot_delay) -- Stabilize
 
                 local total_items = mq.TLO.Corpse.Items() or 0
-                for i = total_items, 1, -1 do
-                    mq.delay(config.get().loot.item_loot_delay)
-                    local item = mq.TLO.Corpse.Item(i)
-                    if item() and filter:matches(item) then
-                        shouldLoot = true
-                        break
-                    end
-                end
+                utils.info(string.format('[Loot] Scanning \ay%d\ax item(s) on corpse', total_items))
 
-                if shouldLoot then
-                    helpers.info(string.format('Corpse ID %d matches white filter. Looting...', c.id))
-                    loot.loot_from_open_window()
-                else
-                    helpers.info(string.format('Corpse ID %d does not match white filter. Skipping...', c.id))
+                for i = total_items, 1, -1 do
+                    mq.delay(cfg.item_loot_delay)
+                    local item = mq.TLO.Corpse.Item(i)
+                    if item() then
+                        local name = item.Name()
+                        -- Check filter first
+                        if not filter:matches(item) then
+                            utils.fail(string.format('[Loot] Skip \ar%s\ax — no filter match', name))
+                        -- Then lore check
+                        elseif loot.loot_lore_check(item) == false then
+                            utils.fail(string.format('[Loot] Skip \ar%s\ax — lore item already owned', name))
+                        else
+                            utils.pass(string.format('[Loot] Looting \ag%s\ax (ID: %d, slot %d)', name, item.ID(), i))
+                            mq.cmdf('/notify LootWnd LW_LootSlot%d rightmouseup', i - 1)
+                            mq.delay(cfg.item_transfer_timeout, function() return not mq.TLO.Corpse.Item(i)() end)
+                        end
+                    end
                 end
 
                 loot.close_loot_window()
             end
-            
-        end
-    end
-end
-
-function loot.black(filter, radius, zradius)
-    local corpses = corpse.get_all(radius, zradius)
-    
-    for _, c in ipairs(corpses) do
-        -- LIVE CHECK: verify the ID still exists in the game world
-        if mq.TLO.Spawn(c.id)() then
-            helpers.info(string.format('Checking corpse ID %d against black filter...', c.id))
-            
-            if loot.open_corpse_by_id(c.id) then
-                mq.delay(config.get().loot.item_loot_delay) -- Stabilize
-                local shouldLoot = true
-
-                local total_items = mq.TLO.Corpse.Items() or 0
-                for i = total_items, 1, -1 do
-                    mq.delay(config.get().loot.item_loot_delay)
-                    local item = mq.TLO.Corpse.Item(i)
-                    if item() and filter:matches(item) then
-                        shouldLoot = false
-                        break
-                    end
-                end
-
-                if shouldLoot then
-                    helpers.info(string.format('Corpse ID %d does not match black filter. Looting...', c.id))
-                    loot.loot_from_open_window()
-                else
-                    helpers.info(string.format('Corpse ID %d matches black filter. Skipping...', c.id))
-                end
-
-                loot.close_loot_window()
-            end
-            
         end
     end
 end

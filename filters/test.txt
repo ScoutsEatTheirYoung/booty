@@ -59,13 +59,14 @@
 # Pattern: %s%(Enhanced%)$
 # Pattern: %s%(Exalted%)$
 # Pattern: %s%(Ascendant%)$
+Pattern: ^Illegible Tome
 
 # ------------------------------------------------------------------------------
 # 3. VALUE THRESHOLDS
 # ------------------------------------------------------------------------------
 
 # Example: Match anything worth more than 50 Platinum
-# Value: >= 50pp
+Value: >= 10pp
 
 # Example: Match anything worth less than 1 Gold
 # Value: < 1gp

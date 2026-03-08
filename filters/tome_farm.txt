@@ -1,0 +1,5 @@
+Value: >= 5pp
+Value: >= 1pp & Flag: Stackable
+Pattern: ^Illegible Tome
+Pattern: ^Shard of
+Pattern: ^Ascendant Gem

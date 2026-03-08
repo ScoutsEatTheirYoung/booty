@@ -1,6 +1,6 @@
 local mq = require('mq')
 
-local helpers = require('booty.helpers')
+local utils = require('booty.utils')
 local config = require('booty.config')
 local corpse = require('booty.corpse')
 local loot = require('booty.loot')
@@ -13,10 +13,10 @@ end
 
 function sell.bag_items(bag_index)
 
-    helpers.info("Selling items from bag " .. bag_index)
+    utils.info("Selling items from bag " .. bag_index)
     -- 1. OPEN THE SELL WINDOW IF NOT OPEN
     if not sell.is_sell_window_open() then
-        helpers.error("Sell window is not open. Please open a merchant window first.")
+        utils.error("Sell window is not open. Please open a merchant window first.")
         return
     end
 
@@ -27,20 +27,20 @@ function sell.bag_items(bag_index)
 
     -- Verify you actually have a bag there
     if not bag() then
-        helpers.error("No bag found in slot " .. bag_index)
+        utils.error("No bag found in slot " .. bag_index)
         return
     end
 
     -- 3. THE LOOP
     -- bag.Container() returns the number of slots in that bag (e.g., 8, 10, 20)
-    helpers.info("Selling from " .. bag())
+    utils.info("Selling from " .. bag())
     local cfg = config.get().sell
     for i = 1, bag.Container() do
         local item = bag.Item(i)
 
         -- Only attempt to sell if an item exists in this slot
         if item() then
-            helpers.info("  Selling: " .. item.Name())
+            utils.info("  Selling: " .. item.Name())
 
             -- STEP A: SELECT THE ITEM
             -- Syntax: /itemnotify in <bag_name> <slot_number> leftmouseup

@@ -1,16 +1,16 @@
 -- =========================================================================
--- booty/helpers.lua - Shared utility functions
+-- booty/utils.lua - Shared utility functions
 -- =========================================================================
 local mq = require('mq')
 
-local helpers = {}
+local utils = {}
 
 -- =========================================================================
 -- Output Formatting with MQ2 Color Codes
 -- =========================================================================
 
 -- Color codes for MQ2 output
-helpers.colors = {
+utils.colors = {
     red = '\ay',      -- Actually yellow in MQ2, use for warnings
     green = '\ag',
     yellow = '\ay',
@@ -21,24 +21,32 @@ helpers.colors = {
     cyan = '\ao',     -- Orange actually
 }
 
-function helpers.print(msg)
+function utils.print(msg)
     print('\ag[Booty]\ax ' .. msg)
 end
 
-function helpers.warn(msg)
+function utils.warn(msg)
     print('\ay[Booty]\ax ' .. msg)
 end
 
-function helpers.error(msg)
+function utils.error(msg)
     print('\ar[Booty]\ax ' .. msg)
 end
 
-function helpers.success(msg)
+function utils.success(msg)
     print('\ag[Booty]\ax ' .. msg)
 end
 
-function helpers.info(msg)
+function utils.info(msg)
     print('\at[Booty]\ax ' .. msg)
+end
+
+function utils.pass(msg)
+    print('\ag[Booty]\ax \ag✓\ax ' .. msg)
+end
+
+function utils.fail(msg)
+    print('\ar[Booty]\ax \ar✗\ax ' .. msg)
 end
 
 -- =========================================================================
@@ -46,7 +54,7 @@ end
 -- =========================================================================
 
 -- Get item currently on cursor
-function helpers.get_cursor_item()
+function utils.get_cursor_item()
     local cursor = mq.TLO.Cursor
     if not cursor() then
         return nil
@@ -66,7 +74,7 @@ function helpers.get_cursor_item()
 end
 
 -- Clear cursor by putting item back in inventory
-function helpers.clear_cursor()
+function utils.clear_cursor()
     if mq.TLO.Cursor() then
         mq.cmd('/autoinventory')
         mq.delay(500, function() return not mq.TLO.Cursor() end)
@@ -78,13 +86,13 @@ end
 -- =========================================================================
 
 -- Trim whitespace from both ends
-function helpers.trim(s)
+function utils.trim(s)
     if not s then return '' end
     return s:match('^%s*(.-)%s*$')
 end
 
 -- Split string by delimiter
-function helpers.split(s, delimiter)
+function utils.split(s, delimiter)
     local result = {}
     local pattern = string.format('([^%s]+)', delimiter)
     for part in s:gmatch(pattern) do
@@ -94,22 +102,22 @@ function helpers.split(s, delimiter)
 end
 
 -- Check if string starts with prefix
-function helpers.starts_with(s, prefix)
+function utils.starts_with(s, prefix)
     return s:sub(1, #prefix) == prefix
 end
 
 -- Check if string ends with suffix
-function helpers.ends_with(s, suffix)
+function utils.ends_with(s, suffix)
     return suffix == '' or s:sub(-#suffix) == suffix
 end
 
 -- Case-insensitive string comparison
-function helpers.iequals(a, b)
+function utils.iequals(a, b)
     return a:lower() == b:lower()
 end
 
 -- Case-insensitive contains
-function helpers.icontains(haystack, needle)
+function utils.icontains(haystack, needle)
     return haystack:lower():find(needle:lower(), 1, true) ~= nil
 end
 
@@ -118,7 +126,7 @@ end
 -- =========================================================================
 
 -- Check if table contains value
-function helpers.contains(tbl, value)
+function utils.contains(tbl, value)
     for _, v in ipairs(tbl) do
         if v == value then
             return true
@@ -128,7 +136,7 @@ function helpers.contains(tbl, value)
 end
 
 -- Check if table contains value (case-insensitive for strings)
-function helpers.icontains_value(tbl, value)
+function utils.icontains_value(tbl, value)
     for _, v in ipairs(tbl) do
         if type(v) == 'string' and type(value) == 'string' then
             if v:lower() == value:lower() then
@@ -142,8 +150,8 @@ function helpers.icontains_value(tbl, value)
 end
 
 -- Add value to table if not already present
-function helpers.add_unique(tbl, value)
-    if not helpers.contains(tbl, value) then
+function utils.add_unique(tbl, value)
+    if not utils.contains(tbl, value) then
         table.insert(tbl, value)
         return true
     end
@@ -151,7 +159,7 @@ function helpers.add_unique(tbl, value)
 end
 
 -- Remove value from table
-function helpers.remove_value(tbl, value)
+function utils.remove_value(tbl, value)
     for i = #tbl, 1, -1 do
         if tbl[i] == value then
             table.remove(tbl, i)
@@ -162,12 +170,12 @@ function helpers.remove_value(tbl, value)
 end
 
 -- Deep copy a table
-function helpers.deep_copy(orig)
+function utils.deep_copy(orig)
     local copy
     if type(orig) == 'table' then
         copy = {}
         for k, v in pairs(orig) do
-            copy[helpers.deep_copy(k)] = helpers.deep_copy(v)
+            copy[utils.deep_copy(k)] = utils.deep_copy(v)
         end
     else
         copy = orig
@@ -176,7 +184,7 @@ function helpers.deep_copy(orig)
 end
 
 -- table to string
-function helpers.table_to_string(tbl, indent)
+function utils.table_to_string(tbl, indent)
     indent = indent or 0
     local result = ''
     local prefix = string.rep('  ', indent)
@@ -184,7 +192,7 @@ function helpers.table_to_string(tbl, indent)
     for k, v in pairs(tbl) do
         if type(v) == 'table' then
             result = result .. string.format('%s%s:\n', prefix, tostring(k))
-            result = result .. helpers.table_to_string(v, indent + 1)
+            result = result .. utils.table_to_string(v, indent + 1)
         else
             result = result .. string.format('%s%s: %s\n', prefix, tostring(k), tostring(v))
         end
@@ -198,7 +206,7 @@ end
 -- =========================================================================
 
 -- Convert copper to readable format (e.g., "5pp 3gp 2sp 1cp")
-function helpers.format_value(copper)
+function utils.format_value(copper)
     if not copper or copper == 0 then
         return '0cp'
     end
@@ -224,7 +232,7 @@ end
 -- =========================================================================
 
 -- Check if file exists
-function helpers.file_exists(path)
+function utils.file_exists(path)
     local f = io.open(path, 'r')
     if f then
         f:close()
@@ -234,7 +242,7 @@ function helpers.file_exists(path)
 end
 
 -- Read entire file contents
-function helpers.read_file(path)
+function utils.read_file(path)
     local f = io.open(path, 'r')
     if not f then
         return nil
@@ -245,7 +253,7 @@ function helpers.read_file(path)
 end
 
 -- Write contents to file
-function helpers.write_file(path, content)
+function utils.write_file(path, content)
     local f = io.open(path, 'w')
     if not f then
         return false
@@ -256,7 +264,7 @@ function helpers.write_file(path, content)
 end
 
 -- Append line to file
-function helpers.append_line(path, line)
+function utils.append_line(path, line)
     local f = io.open(path, 'a')
     if not f then
         return false
@@ -271,20 +279,20 @@ end
 -- =========================================================================
 
 -- Check if player has item in inventory (for LORE checking)
-function helpers.player_has_item(item_name)
+function utils.player_has_item(item_name)
     -- Check main inventory slots
     for i = 1, 10 do
         local slot = mq.TLO.Me.Inventory(string.format('pack%d', i))
         if slot() then
             -- Check the bag itself
-            if slot.Name() and helpers.iequals(slot.Name(), item_name) then
+            if slot.Name() and utils.iequals(slot.Name(), item_name) then
                 return true
             end
             -- Check items inside bag
             local bag_slots = slot.Container() or 0
             for j = 1, bag_slots do
                 local item = slot.Item(j)
-                if item() and item.Name() and helpers.iequals(item.Name(), item_name) then
+                if item() and item.Name() and utils.iequals(item.Name(), item_name) then
                     return true
                 end
             end
@@ -294,35 +302,32 @@ function helpers.player_has_item(item_name)
     -- Check worn slots
     for i = 0, 22 do
         local worn = mq.TLO.Me.Inventory(i)
-        if worn() and worn.Name() and helpers.iequals(worn.Name(), item_name) then
+        if worn() and worn.Name() and utils.iequals(worn.Name(), item_name) then
             return true
         end
     end
-
-    -- Check bank (if accessible)
-    -- Note: Bank TLO may not be accessible unless at banker
 
     return false
 end
 
 -- Helper: Runs a function and prints how long it took
--- Usage: helpers.time_it(my_function, arg1, arg2)
-function helpers.time_it(func, ...)
+-- Usage: utils.time_it(my_function, arg1, arg2)
+function utils.time_it(func, ...)
     local start = os.clock()
-    
+
     -- Run the function with all arguments passed to time_it
-    local result = { func(...) } 
-    
+    local result = { func(...) }
+
     local elapsed_ms = (os.clock() - start) * 1000
     print(string.format("\27[35m[Timer] Execution: %.4f ms\27[0m", elapsed_ms))
-    
+
     -- Return the actual results of the function
     return table.unpack(result)
 end
 
 -- Delay with condition
-function helpers.wait(ms, condition)
+function utils.wait(ms, condition)
     mq.delay(ms, condition)
 end
 
-return helpers
+return utils
