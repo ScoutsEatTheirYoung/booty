@@ -120,7 +120,7 @@ function BuffManager.needBuff(targetName, buffName, minDuration)
             buffDuration = buffDuration / 1000 -- Convert from ms to seconds
         end
     else
-        local spawn = mq.TLO.Spawn(string.format("pc =%s", targetName))
+        local spawn = mq.TLO.Spawn(string.format("pc %s", targetName))
         if not spawn() then
             utils.info(string.format("Target '%s' not found when checking buffs. Returning false.", targetName))
             return false
