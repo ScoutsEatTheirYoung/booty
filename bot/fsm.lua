@@ -1,53 +1,56 @@
 local mq = require('mq')
 
-local FSM = {
+local fsm = {
     currentStateName = "NONE",
     currentState = {},
-    states = {}
+    states = {},
+    lastReason = nil,
 }
 
--- Method to handle transitioning cleanly
-function FSM.changeState(newStateName)
+function fsm.changeState(newStateName)
     if not newStateName then return end
-    
+
     local upperState = string.upper(newStateName)
-    
-    if FSM.states[upperState] then
-        -- Run exit logic for the old state
-        if FSM.currentState and FSM.currentState.onExit then
-            FSM.currentState.onExit()
+
+    if fsm.states[upperState] then
+        if fsm.currentState and fsm.currentState.onExit then
+            fsm.currentState.onExit()
         end
-        
-        -- Swap to the new state
-        FSM.currentStateName = upperState
-        FSM.currentState = FSM.states[upperState]
-        
-        -- Run entry logic for the new state
-        if FSM.currentState.onEnter then
-            FSM.currentState.onEnter()
+
+        fsm.currentStateName = upperState
+        fsm.currentState = fsm.states[upperState]
+        fsm.lastReason = nil  -- Reset so the new state's first reason always prints
+
+        if fsm.currentState.onEnter then
+            fsm.currentState.onEnter()
         end
-        
+
         print("\ag[FSM]\aw Transitioned to: \ay" .. upperState)
     else
-        print("\ar[FSM Error]\aw Invalid State Commanded: " .. tostring(newStateName))
+        print("\ar[FSM Error]\aw Invalid state: " .. tostring(newStateName))
     end
 end
 
--- Method to execute the current state's main loop
-function FSM.update()
-    if FSM.currentState and FSM.currentState.execute then
-        FSM.currentState.execute()
+-- Executes the current state. States return (consumed, reason).
+-- Reason is printed only when it changes, keeping output clean.
+function fsm.update()
+    if fsm.currentState and fsm.currentState.execute then
+        local _, reason = fsm.currentState.execute()
+        if reason ~= fsm.lastReason then
+            fsm.lastReason = reason
+            if reason then
+                print(string.format('\ag[%s]\ax %s', fsm.currentStateName, reason))
+            end
+        end
     end
 end
 
--- Method to check the current state from anywhere
-function FSM.getState()
-    return FSM.currentStateName
+function fsm.getState()
+    return fsm.currentStateName
 end
 
--- The remote listener to catch Alpha's commands over DanNet
 mq.bind('/setstate', function(newState)
-    FSM.changeState(newState)
+    fsm.changeState(newState)
 end)
 
-return FSM
+return fsm

@@ -1,34 +1,59 @@
 local mq = require('mq')
 
-local groupActs = {}
+local group = {}
 
-groupActs.lastInviteRequestTime = 0
+local lastInviteRequestTime = 0
 
-function groupActs.runToLeaderAndRequest(leaderName, offset, inviteCooldown, initCloseDist)
+-- ============================================================
+-- Pure checks  (is* / has*)
+-- ============================================================
 
-        -- Pending invite — accept it
-        if mq.TLO.Me.Invited() then
-            mq.cmd('/invite')
-            return
-        end
+function group.isGrouped()
+    return mq.TLO.Me.Grouped() == true
+end
 
-        local leader = mq.TLO.Spawn('pc =' .. leaderName)
-        if not leader() then return end  -- Leader not in zone, wait
+function group.hasPendingInvite()
+    return mq.TLO.Me.Invited() ~= nil
+end
 
-        -- Navigate toward leader if too far
-        if leader.Distance() > initCloseDist then
-            if not mq.TLO.Navigation.Active() then
-                mq.cmd(string.format('/squelch /nav id %d distance=%d', leader.ID(), initCloseDist - 2))
-            end
-            return
-        end
+-- ============================================================
+-- Actors  (nav* / do*)
+-- ============================================================
 
-        -- Close enough — ask leader to invite us (throttled)
-        local now = os.clock()
-        if (now - groupActs.lastInviteRequestTime) >= inviteCooldown then
-            groupActs.lastInviteRequestTime = now
-            mq.cmd(string.format('/dex %s /invite %s', leaderName, mq.TLO.Me.Name()))
-        end
+-- Full invite flow: run to leader, request invite via /dex, accept when it arrives.
+-- Call every tick from INIT state. Returns true, reason on any action taken.
+function group.navGroupInvite(leaderName, inviteCooldown, closeDistance)
+    -- Accept pending invite
+    if group.hasPendingInvite() then
+        mq.cmd('/invite')
+        return true, 'Accepting group invite'
     end
 
-return groupActs
+    local leader = mq.TLO.Spawn('pc =' .. leaderName)
+    if not leader() then return false end
+
+    -- Navigate toward leader if too far
+    if leader.Distance() > closeDistance then
+        if not mq.TLO.Navigation.Active() then
+            mq.cmdf('/squelch /nav id %d distance=%d', leader.ID(), closeDistance - 2)
+        end
+        return true, string.format('Running to %s (%.0f units)', leaderName, leader.Distance())
+    end
+
+    -- Close enough — request invite on cooldown
+    local now = os.clock()
+    if (now - lastInviteRequestTime) >= inviteCooldown then
+        lastInviteRequestTime = now
+        mq.cmdf('/dex %s /invite %s', leaderName, mq.TLO.Me.Name())
+        return true, string.format('Requesting invite from %s', leaderName)
+    end
+
+    return false
+end
+
+-- Reset invite cooldown (call from INIT state onEnter).
+function group.resetInviteTimer()
+    lastInviteRequestTime = 0
+end
+
+return group

@@ -1,14 +1,24 @@
-local mq      = require('mq')
-local fsm     = require('booty.bot.fsm')
-local actions = require('booty.bot.actions')
-local buffActions = require('booty.bot.actions.buff')
+local mq    = require('mq')
+local fsm   = require('booty.bot.fsm')
+local move  = require('booty.bot.actions.movement')
+local melee = require('booty.bot.actions.melee')
+local buff  = require('booty.bot.actions.buff')
+local util  = require('booty.bot.actions.util')
+local spell = require('booty.bot.actions.spell')
 
 -- ============================================================
--- Mage bot module
--- Called by bot.lua with shared config. Registers MELEE state.
+-- Mage config
+-- Fill in spell names for your level / server.
 -- ============================================================
+local PET_SPELL   = "Summon Companion"
+local PET_REAGENT = "Malachite"
+local PET_GEM     = 1
 
-local CAST_RANGE = 50   -- stay this far back, let the pet do the work
+local SELF_BUFFS = {
+    { spellName = "Minor Shielding", refreshTime = 1800, targets = { "self" } },
+}
+
+local CAST_RANGE = 50
 
 return function(cfg)
     local LEADER      = cfg.leader
@@ -18,69 +28,80 @@ return function(cfg)
     local lastLeaderTargetID = 0
 
     -- ============================================================
+    -- State: SETUP
+    -- ============================================================
+    fsm.states["SETUP"] = {
+        onEnter = function()
+            mq.cmd('/attack off')
+        end,
+        execute = function()
+            local c, r
+
+            if not melee.hasPet() then
+                c, r = spell.castSummonPet(PET_SPELL, PET_GEM, PET_REAGENT)
+                if c then return c, r end
+                return false, "Waiting to summon pet"
+            end
+
+            c, r = buff.castBuffList(SELF_BUFFS, 8)
+            if c then return c, r end
+
+            fsm.changeState("FOLLOW")
+            return false, "Setup complete"
+        end,
+    }
+
+    -- ============================================================
     -- State: MELEE
-    -- Mage role: pet is primary DPS, caster stays at range.
-    -- Tick flow:
-    --   1. Sync to leader's target (one /tar per change, return)
-    --   2. Live target → send pet, approach to cast range, nuke
-    --   3. No live target → pet back off, fan-follow
     -- ============================================================
     fsm.states["MELEE"] = {
         onEnter = function()
             lastLeaderTargetID = 0
         end,
         execute = function()
-            -- Step 1: Track leader's target
-            local leaderTargetID = actions.getLeaderTargetID(LEADER)
+            local c, r
+
+            local leaderTarget   = util.getPcTarget(LEADER)
+            local leaderTargetID = leaderTarget and leaderTarget.ID() or 0
             if leaderTargetID ~= lastLeaderTargetID then
                 lastLeaderTargetID = leaderTargetID
                 if leaderTargetID > 0 then
-                    actions.targetID(leaderTargetID)
-                    return
+                    c, r = util.targetSpawn(leaderTarget)
+                    if c then return c, r end
                 end
             end
 
-            local target = mq.TLO.Target
-            local hasLiveTarget = target()
-                and target.Type() == "NPC"
-                and (target.PctHPs() or 0) > 0
+            if melee.hasLiveTarget() then
+                local target = mq.TLO.Target
+                melee.sendPet(target.ID())
 
-            if hasLiveTarget then
-                -- Step 2: Pet on target, move to cast range
-                actions.sendPet(target.ID())
-                actions.approachTarget(CAST_RANGE)
+                c, r = move.navToTarget(CAST_RANGE)
+                if c then return c, r end
 
-                -- TODO: nuke if in range and spell ready
-                --   actions.castBuffs({ name = "Shock of Spikes", ... }, gem)
+                -- TODO: c, r = spell.castSpell("Shock of Spikes"); if c then return c, r end
+                return false, "In combat — pet attacking"
 
             else
-                -- Step 3: Stand down, follow
-                actions.combatOff()
-                actions.fanFollow(LEADER, myOffset, FOLLOW_DIST)
+                melee.combatOff()
+                c, r = move.navFanFollow(LEADER, myOffset, FOLLOW_DIST)
+                if c then return c, r end
+                return false, "Holding position near leader"
             end
         end,
         onExit = function()
-            actions.combatOff()
+            melee.combatOff()
             mq.cmd('/squelch /nav stop')
         end,
     }
 
-    fsm.states['BUFFTEST'] = {
+    -- ============================================================
+    -- State: BUFFTEST
+    -- ============================================================
+    fsm.states["BUFFTEST"] = {
         execute = function()
-            local testbuffs = {
-                { spellName = "Minor Shielding", refreshTime = 600, targets = { "self"}},
-            }
-
-            buffActions.checkAndBuff(testbuffs, 3)
-
+            local c, r = buff.castBuffList(SELF_BUFFS, 8)
+            if c then return c, r end
+            return false, "All self buffs current"
         end,
-    }
-
-    fsm.states['SETUP'] = {
-        execute = function()
-            -- try to get a pet out
-            
-        end
-
     }
 end

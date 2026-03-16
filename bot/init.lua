@@ -1,7 +1,7 @@
-local mq      = require('mq')
-local fsm     = require('booty.bot.fsm')
-local actions = require('booty.bot.actions')
-local groupActs = require('booty.bot.actions.group')
+local mq    = require('mq')
+local fsm   = require('booty.bot.fsm')
+local move  = require('booty.bot.actions.movement')
+local group = require('booty.bot.actions.group')
 
 -- ============================================================
 -- Shared config — class modules receive this table
@@ -30,39 +30,32 @@ fsm.states["IDLE"] = {
         mq.cmd('/squelch /pet back off')
     end,
     execute = function()
-        -- Waiting for /setstate
+        return false, "Idle — waiting for /setstate"
     end,
 }
 
 -- ============================================================
 -- State: INIT (shared)
--- Runs on startup. Navigates to the leader, asks them via DNet
--- to invite us, then accepts the invite. Once grouped, transitions
--- automatically to FOLLOW.
---
--- Tick flow:
---   1. Already grouped? → FOLLOW (done)
---   2. Pending invite? → /invite to accept
---   3. Leader not in zone? → wait
---   4. Too far from leader? → nav toward them
---   5. Close enough + no invite → /dtell leader to invite (5s cooldown)
+-- Navigates to leader, requests group invite, accepts it.
+-- Auto-transitions to FOLLOW once grouped.
 -- ============================================================
-local INVITE_COOLDOWN  = 5     -- seconds between invite requests
-local INIT_CLOSE_DIST  = 20    -- how close we need to be before requesting invite
+local INVITE_COOLDOWN = 5   -- seconds between invite requests
+local INIT_CLOSE_DIST = 20  -- distance at which we request the invite
 
 fsm.states["INIT"] = {
     onEnter = function()
         mq.cmd('/attack off')
         mq.cmd('/squelch /pet back off')
-        groupActs.lastInviteRequestTime = 0
+        group.resetInviteTimer()
     end,
     execute = function()
-        -- Already grouped — we're done
-        if mq.TLO.Me.Grouped() then
+        if group.isGrouped() then
             fsm.changeState("FOLLOW")
             return
         end
-        groupActs.runToLeaderAndRequest(LEADER, config.offset, INVITE_COOLDOWN, INIT_CLOSE_DIST)
+        local c, r = group.navGroupInvite(LEADER, INVITE_COOLDOWN, INIT_CLOSE_DIST)
+        if c then return c, r end
+        return false, "Waiting for group invite"
     end,
     onExit = function()
         mq.cmd('/squelch /nav stop')
@@ -78,7 +71,9 @@ fsm.states["FOLLOW"] = {
         mq.cmd('/squelch /pet back off')
     end,
     execute = function()
-        actions.fanFollow(config.leader, config.offset, config.followDist)
+        local c, r = move.navFanFollow(config.leader, config.offset, config.followDist)
+        if c then return c, r end
+        return false, "Following " .. config.leader
     end,
     onExit = function()
         mq.cmd('/squelch /nav stop')
@@ -86,27 +81,27 @@ fsm.states["FOLLOW"] = {
 }
 
 -- ============================================================
--- Class dispatch
+-- Name-based dispatch
+-- Map each bot's character name to its module.
 -- ============================================================
-local CLASS_MODULES = {
-    SHM = 'booty.bot.shaman',
-    MAG = 'booty.bot.mage',
+local NAME_MODULES = {
+    Beta  = 'booty.bot.shaman',
+    Gamma = 'booty.bot.mage',
 }
 
-local class = mq.TLO.Me.Class.ShortName()
-local modulePath = CLASS_MODULES[class]
+local myName = mq.TLO.Me.Name()
+local modulePath = NAME_MODULES[myName]
 
 if modulePath then
     require(modulePath)(config)
 else
-    print(string.format('\ar[Bot]\aw No class module for: \ay%s\ar. States: IDLE, FOLLOW only.', class or '?'))
+    print(string.format('\ar[Bot]\aw No module for character: \ay%s\ar. States: IDLE, FOLLOW only.', myName))
 end
 
 -- ============================================================
 -- Main Loop
 -- ============================================================
-print(string.format('\ag[Bot]\aw Online as \ay%s\aw (%s) — /setstate <IDLE|FOLLOW|MELEE>',
-    mq.TLO.Me.Name(), class or '?'))
+print(string.format('\ag[Bot]\aw Online as \ay%s\aw — /setstate <IDLE|FOLLOW|MELEE>', myName))
 
 fsm.changeState("INIT")
 

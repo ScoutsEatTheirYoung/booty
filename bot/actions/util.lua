@@ -1,17 +1,24 @@
 local mq = require('mq')
 
-local utilActs = {}
+local util = {}
 
-function utilActs.getPcTarget(pcName)
+-- ============================================================
+-- Pure checks  (get* / find*)
+-- ============================================================
+
+-- Return the spawn that pcName is currently targeting, or nil.
+function util.getPcTarget(pcName)
     local pc = mq.TLO.Spawn('pc =' .. pcName)
     if not pc() then return nil end
-    return pc.TargetOfTarget
+    local t = pc.TargetOfTarget
+    if not t or not t() then return nil end
+    return t
 end
 
--- Resolves target specifiers to a flat list of { spawn, label } pairs.
--- Spawn TLO refs are stored directly since the list is rebuilt every tick.
--- IDs are used only for deduplication.
-function utilActs.resolveTargets(targetList)
+-- Resolve target specifiers to a flat list of { spawn, label } pairs.
+-- Rebuilt fresh each tick — IDs used only for deduplication within this call.
+-- Specifiers: "self", "pet", "group" (all members + their pets), or a PC name.
+function util.resolveTargets(targetList)
     local list = {}
     local seen = {}
 
@@ -31,34 +38,37 @@ function utilActs.resolveTargets(targetList)
             add(mq.TLO.Me.Pet, "my pet")
 
         elseif t == "group" then
-            -- Group members + their pets
-            -- Group.Members() returns count of OTHER members (excludes self)
-            -- Group.Member(i).Spawn = their spawn, Group.Member(i).Pet = their pet spawn
+            add(mq.TLO.Me, "self")
+            add(mq.TLO.Me.Pet, "my pet")
             local count = mq.TLO.Group.Members() or 0
             for i = 1, count do
                 local m = mq.TLO.Group.Member(i)
                 if m and m.Name() then
-                    add(m.Spawn,  m.Name())
-                    add(m.Pet,    m.Name() .. "'s pet")
+                    add(m.Spawn, m.Name())
+                    add(m.Pet,   m.Name() .. "'s pet")
                 end
             end
 
         else
-            -- Named PC
             add(mq.TLO.Spawn('pc =' .. t), t)
         end
     end
 
-    -- sort the list so its always in the same order (by label)
     table.sort(list, function(a, b) return a.label < b.label end)
     return list
 end
 
-function utilActs.acquireTargetSpawn(spawn)
+-- ============================================================
+-- Actors  (target*)
+-- ============================================================
+
+-- Target spawn if not already targeted. Returns true, reason on action; false if spawn invalid.
+function util.targetSpawn(spawn)
     if not spawn or not spawn() then return false end
-    local spawnId = spawn.ID()
-    mq.cmd('/target id ' .. spawnId)
-    return true
+    local id = spawn.ID()
+    if mq.TLO.Target.ID() == id then return false end
+    mq.cmdf('/squelch /tar id %d', id)
+    return true, string.format('Targeting %s', spawn.Name() or id)
 end
 
-return utilActs
+return util
