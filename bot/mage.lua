@@ -14,7 +14,7 @@ local PET_SPELL   = "Summon Companion"
 local PET_REAGENT = "Malachite"
 local PET_GEM     = 1
 
-local SELF_BUFFS = {
+local BUFFS = {
     { spellName = "Minor Shielding", refreshTime = 1800, targets = { "self" } },
 }
 
@@ -43,7 +43,7 @@ return function(cfg)
                 return false, "Waiting to summon pet"
             end
 
-            c, r = buff.castBuffList(SELF_BUFFS, 8)
+            c, r = buff.castBuffList(BUFFS, 8)
             if c then return c, r end
 
             fsm.changeState("FOLLOW")
@@ -99,7 +99,7 @@ return function(cfg)
     -- ============================================================
     fsm.states["BUFFTEST"] = {
         execute = function()
-            local c, r = buff.castBuffList(SELF_BUFFS, 8)
+            local c, r = buff.castBuffList(BUFFS, 8)
             if c then return c, r end
             return false, "All self buffs current"
         end,
