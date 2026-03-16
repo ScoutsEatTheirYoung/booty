@@ -29,9 +29,24 @@ return function(cfg)
     local campPoint = nil
     local CAMP_RADIUS = 15
 
-    local lastActionTime = os.clock()
-    local IDLE_THRESHOLD = 5  -- seconds of no non-idle action before sitting to med
+    local timeLastNonIdleAction = os.clock()
+    local IDLE_THRESHOLD        = 5  -- seconds before sitting to med
 
+    -- Sit/med and check buff uptimes. Call when the group is idle.
+    ---@return boolean, string
+    local function doIdleTasks()
+        local pctMana = mq.TLO.Me.PctMana() or 100
+
+        if not mq.TLO.Me.Sitting() and pctMana < 100 then
+            mq.cmd('/sit')
+            return true, 'Sitting to med'
+        end
+
+        local c, r = buff.castBuffList(BUFFS, 8)
+        if c then return c, r end
+
+        return false, string.format('Medding (%d%% mana)', pctMana)
+    end
 
     -- ============================================================
     -- State: SETUP
@@ -108,7 +123,7 @@ return function(cfg)
             mq.cmd('/attack off')
             mq.cmd('/squelch /pet back off')
             lastLeaderTargetID = 0
-            lastActionTime     = os.clock()
+            timeLastNonIdleAction     = os.clock()
         end,
         execute = function()
             local c, r
@@ -118,14 +133,14 @@ return function(cfg)
             if assistID ~= lastLeaderTargetID then
                 lastLeaderTargetID = assistID
                 if assistID > 0 then
-                    lastActionTime = os.clock()
+                    timeLastNonIdleAction = os.clock()
                     c, r = util.targetSpawn(assistTarget)
                     if c then return c, r end
                 end
             end
 
             if melee.hasLiveTarget() then
-                lastActionTime = os.clock()
+                timeLastNonIdleAction = os.clock()
 
                 if mq.TLO.Me.Sitting() then
                     mq.cmd('/stand')
@@ -145,7 +160,7 @@ return function(cfg)
 
                 c, r = move.navFanFollow(LEADER, myOffset, FOLLOW_DIST)
                 if c then
-                    lastActionTime = os.clock()
+                    timeLastNonIdleAction = os.clock()
                     if mq.TLO.Me.Sitting() then
                         mq.cmd('/stand')
                         return true, 'Standing up to follow'
@@ -154,19 +169,10 @@ return function(cfg)
                 end
 
                 -- In range and not moving — check if idle long enough to med
-                local pctMana = mq.TLO.Me.PctMana() or 100
-                if (os.clock() - lastActionTime) >= IDLE_THRESHOLD
-                        and not group.isGroupEngaged()
-                        and pctMana < 100 then
-                    if not mq.TLO.Me.Sitting() then
-                        mq.cmd('/sit')
-                        return true, 'Sitting to med'
-                    end
-
-                    c, r = buff.castBuffList(BUFFS, 8)
+                if (os.clock() - timeLastNonIdleAction) >= IDLE_THRESHOLD
+                        and not group.isGroupEngaged() then
+                    c, r = doIdleTasks()
                     if c then return c, r end
-
-                    return false, string.format('Medding (%d%% mana)', pctMana)
                 end
 
                 if mq.TLO.Me.Sitting() then
