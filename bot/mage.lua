@@ -250,9 +250,9 @@ return function(cfg)
     -- ============================================================
     fsm.states["BUFFTEST"] = {
         execute = function()
-            local c, r = buff.castBuffList(BUFFS, 8)
+            local c, r = doIdleTasks()
             if c then return c, r end
-            return false, "All self buffs current"
+            return false, "All buffs current"
         end,
     }
 end
