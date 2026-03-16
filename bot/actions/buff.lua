@@ -9,7 +9,11 @@ local buff = {}
 -- Pure checks  (does*)
 -- ============================================================
 
--- True if target spawn needs the buff (missing or expires within refreshTime seconds).
+--- True if target spawn needs the buff (missing or expires within refreshTime seconds).
+---@param target spawn
+---@param spellName string
+---@param refreshTime number  seconds
+---@return boolean
 local function doesTargetNeedBuff(target, spellName, refreshTime)
     if not target or not target() then return false end
     local b = target.Buff(spellName)
@@ -22,16 +26,19 @@ end
 -- Actors  (cast*)
 -- ============================================================
 
--- Cycle through buffList, one action per tick. Returns true, reason if action taken.
---
--- buffList entry format:
---   { spellName = "Spirit of Wolf", refreshTime = 300, targets = {"group"} }
---
--- targets: "self", "pet", "group" (all members + pets), or a PC name.
--- spellGem: gem slot to use when the spell needs to be memorized.
+--- Cycle through buffList, one action per tick. Returns true, reason if action taken.
+---
+--- buffList entry format:
+---   { spellName = "Spirit of Wolf", refreshTime = 300, targets = {"group"} }
+---
+--- targets: "self", "pet", "group" (all members + pets), or a PC name.
+--- spellGem: gem slot to use when the spell needs to be memorized.
+---@param buffList BuffEntry[]
+---@param spellGem integer  Gem slot to use when the spell needs to be memorized
+---@return boolean, string
 function buff.castBuffList(buffList, spellGem)
-    if not buffList or #buffList == 0 then return false end
-    if not spellGem or spellGem <= 0 then return false end
+    if not buffList or #buffList == 0 then return false, 'Buff list is empty' end
+    if not spellGem or spellGem <= 0 then return false, 'Invalid spell gem slot' end
 
     if mq.TLO.Me.Casting() then
         return true, 'Casting in progress'
@@ -86,7 +93,7 @@ function buff.castBuffList(buffList, spellGem)
         end
     end
 
-    return false
+    return false, 'All buffs current'
 end
 
 return buff

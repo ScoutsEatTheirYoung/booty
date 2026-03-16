@@ -1,0 +1,10 @@
+{
+  "$schema": "https://raw.githubusercontent.com/LuaLS/lua-language-server/main/meta/config.json",
+  "runtime": {
+    "version": "LuaJIT"
+  },
+  "workspace": {
+    "library": ["../../mq-definitions"],
+    "ignoreDir": [".git"]
+  }
+}

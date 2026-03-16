@@ -12,7 +12,7 @@ mq.event('SpellFizzle', '#*#Your spell fizzles#*#', function()
     lastFizzleTime = os.clock()
 end)
 
--- Bool: a fizzle occurred within the backoff window.
+---@return boolean
 function spell.justFizzled()
     return (os.clock() - lastFizzleTime) < FIZZLE_BACKOFF
 end
@@ -21,7 +21,9 @@ end
 -- Pure checks  (is* / has* / find* / get*)
 -- ============================================================
 
--- Iterate gem slots 1-12 and return the slot number if spellName is memmed, else nil.
+--- Iterate gem slots 1-12 and return the slot number if spellName is memmed, else nil.
+---@param spellName string
+---@return integer|nil
 function spell.findGemForSpell(spellName)
     for i = 1, 12 do
         if mq.TLO.Me.Gem(i)() == spellName then
@@ -31,50 +33,72 @@ function spell.findGemForSpell(spellName)
     return nil
 end
 
--- Bool: spell is in any gem slot.
+---@param spellName string
+---@return boolean
 function spell.isSpellMemmed(spellName)
     return spell.findGemForSpell(spellName) ~= nil
 end
 
--- Bool: spell is memmed AND off cooldown.
+---@param spellName string
+---@return boolean
 function spell.isSpellReady(spellName)
     local gem = spell.findGemForSpell(spellName)
     if not gem then return false end
     return mq.TLO.Me.SpellReady(gem)() == true
 end
 
--- Bool: spell will land on current target (checks stacking, immunity, etc.).
+--- Bool: spell will land on current target (checks stacking, immunity, etc.).
+---@param spellName string
+---@return boolean
 function spell.willLand(spellName)
     return mq.TLO.Spell(spellName).WillLand() == true
 end
 
+---@param spellName string
+---@return boolean
+function spell.hasManaForSpell(spellName)
+    local cost = mq.TLO.Spell(spellName).Mana() or 0
+    return mq.TLO.Me.CurrentMana() >= cost
+end
+
 -- ============================================================
--- Actors  (cast*)
+-- Actors  (cast* / memorize*)
 -- ============================================================
 
--- Memorize spellName into gemNum. Returns true, reason on action taken.
+--- Memorize spellName into gemNum. Returns true, reason on action taken.
+---@param gemNum integer
+---@param spellName string
+---@return boolean, string
 function spell.memorizeSpell(gemNum, spellName)
     if not mq.TLO.Me.Book(spellName)() then
-        return false
+        return false, string.format("'%s' not in spellbook", spellName)
     end
     if mq.TLO.Me.Gem(gemNum)() == spellName then
-        return false  -- Already memmed in that slot
+        return false, string.format("'%s' already in gem %d", spellName, gemNum)
     end
     mq.cmdf('/memspell %d "%s"', gemNum, spellName)
     return true, string.format('Memorizing %s into gem %d', spellName, gemNum)
 end
 
--- Cast spellName (must already be memmed and ready) on current target.
+--- Cast spellName (must already be memmed and ready) on current target.
+---@param spellName string
+---@return boolean, string
 function spell.castSpell(spellName)
     if spell.justFizzled() then
-        return false
+        return false, 'Backing off after fizzle'
     end
     if mq.TLO.Me.Casting() then
         return true, 'Casting ' .. spellName
     end
     local gem = spell.findGemForSpell(spellName)
     if not gem then
-        return false
+        return false, string.format("'%s' not memmed", spellName)
+    end
+    if not spell.hasManaForSpell(spellName) then
+        return false, string.format("Not enough mana for '%s'", spellName)
+    end
+    if not spell.willLand(spellName) then
+        return false, string.format("'%s' will not land on current target", spellName)
     end
     if not mq.TLO.Me.SpellReady(gem)() then
         return true, string.format('Waiting for %s to be ready', spellName)
@@ -83,14 +107,18 @@ function spell.castSpell(spellName)
     return true, string.format('Casting %s', spellName)
 end
 
--- Summon a pet. Mems the spell into gemNum if needed.
--- reagent is optional — pass nil if the spell needs no reagent.
+--- Summon a pet. Mems the spell into gemNum if needed.
+--- reagent is optional — pass nil if the spell needs no reagent.
+---@param spellName string
+---@param gemNum integer
+---@param reagent string|nil
+---@return boolean, string
 function spell.castSummonPet(spellName, gemNum, reagent)
     if not mq.TLO.Me.Book(spellName)() then
-        return false
+        return false, string.format("'%s' not in spellbook", spellName)
     end
     if reagent and not mq.TLO.FindItem(reagent)() then
-        return false  -- Missing reagent
+        return false, string.format("Missing reagent: %s", reagent)
     end
     if not spell.isSpellMemmed(spellName) then
         return spell.memorizeSpell(gemNum, spellName)

@@ -15,7 +15,7 @@ local OFFSETS = {
 }
 
 local config = {
-    leader     = LEADER,
+    leader     = "Alpha",
     offset     = OFFSETS[mq.TLO.Me.Name()] or { x = 0, y = 0 },
     followDist = FOLLOW_DIST,
 }

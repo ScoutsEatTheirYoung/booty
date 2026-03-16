@@ -4,6 +4,7 @@ local move  = require('booty.bot.actions.movement')
 local melee = require('booty.bot.actions.melee')
 local buff  = require('booty.bot.actions.buff')
 local util  = require('booty.bot.actions.util')
+local group = require('booty.bot.actions.group')
 
 -- ============================================================
 -- Shaman config
@@ -24,6 +25,13 @@ return function(cfg)
     local FOLLOW_DIST = cfg.followDist
 
     local lastLeaderTargetID = 0
+    ---@type Point|nil
+    local campPoint = nil
+    local CAMP_RADIUS = 15
+
+    local lastActionTime = os.clock()
+    local IDLE_THRESHOLD = 5  -- seconds of no non-idle action before sitting to med
+
 
     -- ============================================================
     -- State: SETUP
@@ -88,6 +96,146 @@ return function(cfg)
         end,
         onExit = function()
             mq.cmd('/squelch /nav stop')
+        end,
+    }
+
+    -- ============================================================
+    -- State: FOLLOWANDEXP
+    -- Follow Alpha and assist on everything Alpha attacks.
+    -- ============================================================
+    fsm.states["FOLLOWANDEXP"] = {
+        onEnter = function()
+            mq.cmd('/attack off')
+            mq.cmd('/squelch /pet back off')
+            lastLeaderTargetID = 0
+            lastActionTime     = os.clock()
+        end,
+        execute = function()
+            local c, r
+
+            local assistTarget = melee.getAssistTarget(LEADER)
+            local assistID     = assistTarget and assistTarget.ID() or 0
+            if assistID ~= lastLeaderTargetID then
+                lastLeaderTargetID = assistID
+                if assistID > 0 then
+                    lastActionTime = os.clock()
+                    c, r = util.targetSpawn(assistTarget)
+                    if c then return c, r end
+                end
+            end
+
+            if melee.hasLiveTarget() then
+                lastActionTime = os.clock()
+
+                if mq.TLO.Me.Sitting() then
+                    mq.cmd('/stand')
+                    return true, 'Standing up'
+                end
+
+                c, r = move.navToTarget(CAST_RANGE)
+                if c then return c, r end
+
+                -- TODO: cast slow
+                -- TODO: cast DoT
+                return false, "In combat"
+
+            else
+                c, r = melee.combatOff()
+                if c then return c, r end
+
+                c, r = move.navFanFollow(LEADER, myOffset, FOLLOW_DIST)
+                if c then
+                    lastActionTime = os.clock()
+                    if mq.TLO.Me.Sitting() then
+                        mq.cmd('/stand')
+                        return true, 'Standing up to follow'
+                    end
+                    return c, r
+                end
+
+                -- In range and not moving — check if idle long enough to med
+                local pctMana = mq.TLO.Me.PctMana() or 100
+                if (os.clock() - lastActionTime) >= IDLE_THRESHOLD
+                        and not group.isGroupEngaged()
+                        and pctMana < 100 then
+                    if not mq.TLO.Me.Sitting() then
+                        mq.cmd('/sit')
+                        return true, 'Sitting to med'
+                    end
+
+                    c, r = buff.castBuffList(BUFFS, 8)
+                    if c then return c, r end
+
+                    return false, string.format('Medding (%d%% mana)', pctMana)
+                end
+
+                if mq.TLO.Me.Sitting() then
+                    mq.cmd('/stand')
+                    return true, 'Standing up'
+                end
+
+                return false, "Walking with " .. LEADER
+            end
+        end,
+        onExit = function()
+            mq.cmd('/stand')
+            mq.cmd('/squelch /nav stop')
+            mq.cmd('/attack off')
+        end,
+    }
+
+    -- ============================================================
+    -- State: MAKECAMPANDEXP
+    -- Snap camp position on enter, hold it, assist when Alpha pulls,
+    -- return to camp after each kill.
+    -- ============================================================
+    fsm.states["MAKECAMPANDEXP"] = {
+        onEnter = function()
+            mq.cmd('/attack off')
+            mq.cmd('/squelch /pet back off')
+            lastLeaderTargetID = 0
+            local alpha = mq.TLO.Spawn('pc =' .. LEADER)
+            if alpha() then
+                campPoint = { y = alpha.Y(), x = alpha.X() }
+            end
+        end,
+        execute = function()
+            local c, r
+
+            local assistTarget = melee.getAssistTarget(LEADER)
+            local assistID     = assistTarget and assistTarget.ID() or 0
+            if assistID ~= lastLeaderTargetID then
+                lastLeaderTargetID = assistID
+                if assistID > 0 then
+                    c, r = util.targetSpawn(assistTarget)
+                    if c then return c, r end
+                end
+            end
+
+            if melee.hasLiveTarget() then
+                c, r = move.navToTarget(CAST_RANGE)
+                if c then return c, r end
+
+                -- TODO: cast slow
+                -- TODO: cast DoT
+                return false, "In combat"
+
+            else
+                c, r = melee.combatOff()
+                if c then return c, r end
+
+                if campPoint then
+                    c, r = move.navToPoint(campPoint, CAMP_RADIUS)
+                    if c then return c, r end
+                end
+
+                return false, "Holding camp"
+            end
+        end,
+        onExit = function()
+            mq.cmd('/squelch /nav stop')
+            mq.cmd('/attack off')
+            mq.cmd('/squelch /pet back off')
         end,
     }
 

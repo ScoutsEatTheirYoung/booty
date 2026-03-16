@@ -187,4 +187,6 @@ Update `actions/ACTIONS.md` to track what's built and what's pending.
 | `/setstate FOLLOW` | Fan-follow leader |
 | `/setstate SETUP` | Buff up, summon pet, then auto-FOLLOW |
 | `/setstate MELEE` | Assist leader, fight, heal between pulls |
+| `/setstate FOLLOWANDEXP` | Follow leader, assist on everything leader attacks |
+| `/setstate MAKECAMPANDEXP` | Snap camp at leader's position, hold it, assist when leader pulls |
 | `/setstate BUFFTEST` | Test buff cycle without combat |
