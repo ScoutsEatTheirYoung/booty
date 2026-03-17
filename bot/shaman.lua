@@ -69,7 +69,7 @@ return function(cfg)
         execute = function()
             local c, r
 
-            c, r = combat.assistLeader(LEADER, false, false)
+            c, r = combat.assistPc(LEADER, false, false)
             if c then return c, r end
 
             if combat.hasLiveTarget() then
@@ -112,7 +112,7 @@ return function(cfg)
         execute = function()
             local c, r
 
-            c, r = combat.assistLeader(LEADER, false, false)
+            c, r = combat.assistPc(LEADER, false, false)
             if c then timeLastNonIdleAction = os.clock(); return c, r end
 
             combat.disengage()
@@ -150,7 +150,7 @@ return function(cfg)
         execute = function()
             local c, r
 
-            c, r = combat.assistLeader(LEADER, false, false)
+            c, r = combat.assistPc(LEADER, false, false)
             if c then return c, r end
 
             combat.disengage()

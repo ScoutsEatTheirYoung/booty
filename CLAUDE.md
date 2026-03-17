@@ -48,13 +48,14 @@ booty/
 │   ├── shaman.lua        Shaman class states (SETUP/MELEE/FOLLOWANDEXP/MAKECAMPANDEXP)
 │   ├── mage.lua          Mage class states (SETUP/MELEE/FOLLOWANDEXP/MAKECAMPANDEXP)
 │   └── actions/
-│       ├── combat.lua    isInCombat, hasLiveTarget, hasPet, attackOn/Off, disengage, sendPet, engageTarget
-│       ├── melee.lua     getAssistTarget(pcName), targetPcTarget(pcName)
+│       ├── combat.lua    isInCombat, hasLiveTarget, hasPet, attackOn/Off, disengage, sendPet, engageTarget, assistLeader
+│       ├── target.lua    getPcTarget, targetSpawn, targetByID, targetPcTarget
+│       ├── melee.lua     getAssistTarget(pcName) — live NPC filter on PC's target
 │       ├── movement.lua  navFanFollow, navToTarget, navToPC, navToPoint
 │       ├── spell.lua     findGemForSpell, isSpellMemmed, isSpellReady, castSpell, castSummonPet, willLand
 │       ├── buff.lua      castBuffList(BUFFS, gemSlotStart) — cast/rebuff cycle
 │       ├── group.lua     isGroupEngaged, isPcEngaged, getEngagedTarget, isGrouped, navGroupInvite
-│       └── util.lua      getPcTarget, resolveTargets, targetSpawn, targetByID
+│       └── util.lua      resolveTargets — "self"/"pet"/"group"/name → spawn list
 └── search/item/init.lua  ImGui inventory browser with item icons
 ```
 
@@ -125,8 +126,8 @@ combat.attackOn() / attackOff()
 combat.disengage()                               -- attack off + pet back off (only if pet has target)
 combat.sendPet(targetID)                         -- /pet attack if not already on target
 combat.engageTarget(target, melee, pet)          -- target→sendPet→attackOn, one step per tick
-combat.assistLeader(leaderName, melee, pet)      -- main combat entry point for states:
-                                                 -- finds live NPC (leader target → XTargets),
+combat.assistPc(pcName, melee, pet)             -- main combat entry point for states:
+                                                 -- finds live NPC (PC's target → XTargets),
                                                  -- stands if sitting, then engageTarget
 ```
 
@@ -165,12 +166,17 @@ buff.castBuffList(BUFFS, startGem)   -- iterates targets, checks willLand, casts
 
 `willLand` returns `false` when buff is already active (not expired) — this is correct, skip casting.
 
+### target.lua
+```lua
+target.getPcTarget(pcName)      -- spawn.TargetOfTarget = what that PC is currently targeting, or nil
+target.targetSpawn(spawn)       -- /tar id if not already targeted
+target.targetByID(id)
+target.targetPcTarget(pcName)   -- /tar id on leader's target
+```
+
 ### util.lua
 ```lua
-util.getPcTarget(pcName)        -- spawn.TargetOfTarget = what PC is currently targeting
 util.resolveTargets(list)       -- "self"/"pet"/"group"/name → [{spawn, label}]
-util.targetSpawn(spawn)         -- /tar id if not already targeted
-util.targetByID(id)
 ```
 
 ### movement.lua
@@ -207,23 +213,62 @@ local NAME_MODULES = {
 
 Leader is hardcoded as `"Alpha"`. Offsets are configured per-bot name.
 
-## FOLLOWANDEXP Target Priority
+## Bot Design Principles
+
+### States Are Stories
+
+A state's `execute()` function should read like a plain-English description of what the bot does.
+It should contain **no raw `mq.TLO` calls** and **no direct game commands** — all decisions and
+commands belong in action modules.
 
 ```lua
--- 1. Leader has a live NPC target
-local target = util.getPcTarget(LEADERNAME)
-if target and target.ID() > 0 then
-    return combat.engageTarget(target, false, true)
--- 2. No leader target, but group has XTargets
-elseif group.isGroupEngaged() then
-    local engTarget = group.getEngagedTarget()
-    if engTarget then return combat.engageTarget(engTarget, false, true) end
--- 3. Nothing — disengage, follow, idle/med
-else
+-- Good — reads like a story
+execute = function()
+    local c, r
+    c, r = combat.assistLeader(LEADER, false, true)
+    if c then timeLastNonIdleAction = os.clock(); return c, r end
     combat.disengage()
-    -- navFanFollow, doIdleTasks...
+    c, r = move.navFanFollow(LEADER, myOffset, FOLLOW_DIST)
+    if c then timeLastNonIdleAction = os.clock(); return c, r end
+    if idleEnough and not group.isGroupEngaged() then
+        c, r = doIdleTasks()
+        if c then return c, r end
+    end
+    return false, "Walking with " .. LEADER
 end
 ```
+
+### Action Modules Are Small, Testable Units
+
+Each action module owns one domain. Functions are either **pure checks** or **actors**.
+
+**Pure checks** — read client state, no side effects, return plain values (never `c, r`):
+```lua
+combat.hasPet()           -- boolean
+combat.hasLiveTarget()    -- boolean
+group.isGroupEngaged()    -- boolean
+group.isPcEngaged(name)   -- boolean
+```
+
+**Actors** — issue exactly one game command, return `(c, r)`:
+```lua
+combat.assistPc(...)      -- targets + engages, one step per tick
+move.navFanFollow(...)    -- /nav or false if in range
+spell.castSpell(name)     -- /cast or false if not ready
+```
+
+### Movement Handles Its Own Prerequisites
+
+`navFanFollow` and `navToTarget` issue `/stand` if the bot is sitting and needs to move.
+States do not manage standing before movement calls.
+
+`combat.assistLeader` issues `/stand` if sitting and combat is needed.
+States do not manage standing before combat calls.
+
+### `onEnter`/`onExit` May Use Raw Commands
+
+Since they run once per transition (not every tick), `onEnter`/`onExit` may issue raw commands
+directly: `/attack off`, `/squelch /nav stop`, `/stand`, etc.
 
 ## MQ2 Type Annotations
 
