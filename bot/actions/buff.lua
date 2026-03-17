@@ -1,6 +1,6 @@
 local mq    = require('mq')
 local utils = require('booty.utils')
-local util  = require('booty.bot.actions.util')
+local tgt   = require('booty.bot.actions.target')
 local spell = require('booty.bot.actions.spell')
 
 local buff = {}
@@ -71,7 +71,7 @@ function buff.castBuffList(buffList, spellGem)
                     end
 
                     -- Target them if not already
-                    local switched, switchReason = util.targetSpawn(t.spawn)
+                    local switched, switchReason = tgt.targetSpawn(t.spawn)
                     if switched then
                         return true, switchReason  -- Let target land next tick
                     end

@@ -2,21 +2,6 @@ local mq = require('mq')
 
 local util = {}
 
--- ============================================================
--- Pure checks  (get* / find*)
--- ============================================================
-
---- Return the spawn that pcName is currently targeting, or nil.
----@param pcName string
----@return spawn|nil
-function util.getPcTarget(pcName)
-    local pc = mq.TLO.Spawn('pc =' .. pcName)
-    if not pc() then return nil end
-    local t = pc.TargetOfTarget --[[@as spawn]]
-    if not t or not t() then return nil end
-    return t
-end
-
 --- Resolve target specifiers to a flat list of ResolvedTarget pairs.
 --- Rebuilt fresh each tick — IDs used only for deduplication within this call.
 ---@param targetList TargetSpecifier[]
@@ -59,31 +44,6 @@ function util.resolveTargets(targetList)
 
     table.sort(list, function(a, b) return a.label < b.label end)
     return list
-end
-
--- ============================================================
--- Actors  (target*)
--- ============================================================
-
---- Target spawn if not already targeted.
----@param spawn spawn
----@return boolean, string
-function util.targetSpawn(spawn)
-    if not spawn or not spawn() then return false, 'Invalid spawn' end
-    local id = spawn.ID()
-    if mq.TLO.Target.ID() == id then return false, 'Already targeted' end
-    mq.cmdf('/squelch /tar id %d', id)
-    return true, string.format('Targeting %s', spawn.Name() or tostring(id))
-end
-
---- Target spawn by ID if not already targeted.
----@param id integer
----@return boolean, string
-function util.targetByID(id)
-    if not id or id <= 0 then return false, 'Invalid spawn ID' end
-    if mq.TLO.Target.ID() == id then return false, 'Already targeted' end
-    mq.cmdf('/squelch /tar id %d', id)
-    return true, string.format('Targeting spawn ID %d', id)
 end
 
 return util

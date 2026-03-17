@@ -1,4 +1,5 @@
-local mq = require('mq')
+local mq  = require('mq')
+local bit = require('bit')
 local move = require('booty.bot.actions.movement')
 
 local group = {}
@@ -9,6 +10,15 @@ local lastInviteRequestTime = 0
 -- Pure checks  (is* / has*)
 -- ============================================================
 
+--- True if pcName has their weapons drawn aggressively (PlayerState bits 4 or 8).
+---@param pcName string
+---@return boolean
+function group.isPcEngaged(pcName)
+    local pc = mq.TLO.Spawn('pc =' .. pcName)
+    if not pc() then return false end
+    return bit.band(pc.PlayerState() or 0, 12) ~= 0
+end
+
 --- True if any mob is actively targeting a group member (via extended target list).
 ---@return boolean
 function group.isGroupEngaged()
@@ -17,6 +27,21 @@ function group.isGroupEngaged()
         if xt and (xt.ID() or 0) > 0 then return true end
     end
     return false
+end
+
+--- Return the first live NPC spawn from the XTarget list, or nil.
+---@return MQSpawn|nil
+function group.getEngagedTarget()
+    for i = 1, 20 do
+        local xt = mq.TLO.Me.XTarget(i)
+        if xt and (xt.ID() or 0) > 0 then
+            local spawn = mq.TLO.Spawn(xt.ID())
+            if spawn() and spawn.Type() == "NPC" and (spawn.PctHPs() or 0) > 0 then
+                return spawn
+            end
+        end
+    end
+    return nil
 end
 
 ---@return boolean

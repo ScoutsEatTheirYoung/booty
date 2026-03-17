@@ -14,6 +14,7 @@ function move.navToTarget(meleeRange)
     local target = mq.TLO.Target
     if not target() then return false, 'No target' end
     if target.Distance() <= meleeRange then return false, 'Already in range of target' end
+    if mq.TLO.Me.Sitting() then mq.cmd('/stand'); return true, 'Standing up to approach' end
     mq.cmdf('/squelch /nav target distance=%d', meleeRange - 2)
     return true, string.format('Navigating to target (%.0f units)', target.Distance())
 end
@@ -54,6 +55,7 @@ function move.navFanFollow(leaderName, offset, threshold)
     local leader = mq.TLO.Spawn('pc =' .. leaderName)
     if not leader() then return false, string.format('%s not found in zone', leaderName) end
     if leader.Distance() <= threshold then return false, string.format('In follow range of %s', leaderName) end
+    if mq.TLO.Me.Sitting() then mq.cmd('/stand'); return true, 'Standing up to follow' end
     local destY = leader.Y() + (offset.y or 0)
     local destX = leader.X() + (offset.x or 0)
     mq.cmdf('/squelch /nav locyx %f %f', destY, destX)

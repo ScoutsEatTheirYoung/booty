@@ -5,151 +5,184 @@ follows a leader, and executes class-specific logic based on character name.
 
 ---
 
-## Core Design Principle: Yield Every Tick
+## Core Design: Yield Every Tick
 
 The main loop ticks every 50ms. Every function must **do one thing and return immediately**.
 No `mq.delay()` inside actions. No loops that issue multiple commands.
 
-If something takes multiple ticks (memorizing a spell, waiting for nav to start, targeting),
-model it as state — issue the command, return, and handle the result next tick.
-
 ```lua
 while true do
-    fsm.update()   -- executes current state's execute()
-    mq.delay(50)   -- yields, processes events, moves to next tick
+    mq.doevents()  -- process events (fizzle, etc.)
+    fsm.update()   -- execute current state's execute()
+    mq.delay(50)   -- yield, allow EQ to process
 end
 ```
 
 ---
 
-## Architecture
+## The `c, r` Contract
 
-```
-init.lua          Entry point. Shared states (IDLE, INIT, FOLLOW). Name-based dispatch.
-fsm.lua           State machine engine. Tracks current state and last reason string.
-shaman.lua        Shaman-specific states (SETUP, MELEE, BUFFTEST).
-mage.lua          Mage-specific states (SETUP, MELEE, BUFFTEST).
-
-actions/
-  spell.lua       Spell mechanics: gem lookup, ready checks, casting, fizzle detection.
-  buff.lua        Buff maintenance: cycles targets, checks durations, calls spell.lua.
-  melee.lua       Combat: attack on/off, pet, target helpers, live target check.
-  movement.lua    Navigation: nav to target, fan-follow.
-  group.lua       Group management: invite flow, grouped check.
-  util.lua        Shared helpers: resolveTargets, getPcTarget, targetSpawn.
-```
-
----
-
-## Naming Convention
-
-The name tells you what a function does and how to use it.
-
-| Prefix | Type | Returns | Example |
-|--------|------|---------|---------|
-| `is*` / `has*` | Pure check | bool | `melee.isInCombat()` |
-| `get*` / `find*` | Pure check | data or nil | `util.getPcTarget(name)` |
-| `nav*` | Actor | `true, reason` or `false` | `move.navToTarget(range)` |
-| `cast*` | Actor | `true, reason` or `false` | `spell.castSpell(name)` |
-| `attack*` / `combat*` | Actor | `true, reason` or `false` | `melee.attackOn()` |
-| `target*` | Actor | `true, reason` or `false` | `util.targetSpawn(spawn)` |
-
-**Pure checks** can be called freely — no side effects, no game commands.
-
-**Actors** issue exactly one game command and return. They consume a tick when they act
-(`true, reason`) and do nothing when conditions aren't met (`false`).
-
----
-
-## Return Value Convention
-
-Actors return `true, reason` when they act, `false` when they don't.
+Every actor returns two values: **`c` (consumed)** and **`r` (reason)**.
 
 ```lua
--- Actor: returns true + reason string, or false
-function move.navToTarget(meleeRange)
-    if mq.TLO.Navigation.Active() then return false end
-    if target.Distance() <= meleeRange then return false end
-    mq.cmdf('/squelch /nav target distance=%d', meleeRange - 2)
-    return true, 'Navigating to target'
-end
+local c, r = someAction(...)
+if c then return c, r end   -- stop — tick is consumed
 ```
 
-States propagate actor reasons up to the FSM using a `c, r` pattern:
+### `c = true` — Tick Consumed
+
+A game command was issued **or** we are actively waiting on the result of one.
+The reason describes **what is actively happening**.
+
+Examples: `/nav`, `/cast`, `/pet attack`, `/attack on`, `/tar id`, `/sit`, `/stand`, `/memspell`
+
+> One command per tick. Once `c = true`, stop evaluating — come back next tick.
+
+### `c = false` — Tick Free
+
+No command was issued. All checks were pure reads of client state.
+The reason is **purely informational** — it describes the current status, not an action.
+It exists only for the status line display.
+
+Examples: `"Walking with Alpha"`, `"Medding (87% mana)"`, `"Holding camp"`, `"No target to assist"`
+
+> `c = false` reasons are never acted on by the caller. They are display-only.
+
+### Why this matters
+
+The FSM prints the reason only when it changes. This gives clean, readable status output
+without spam — you see exactly what the bot is doing or waiting for, one line at a time.
+
+```
+[SETUP] Memorizing Minor Shielding into gem 1
+[SETUP] Casting 'Minor Shielding' on self
+[FOLLOWANDEXP] Walking with Alpha
+[FOLLOWANDEXP] Standing up for combat
+[FOLLOWANDEXP] Targeting Goblin Warrior
+[FOLLOWANDEXP] Pet sent to attack
+[FOLLOWANDEXP] In combat — pet attacking
+[FOLLOWANDEXP] Disengaged
+[FOLLOWANDEXP] Walking with Alpha
+[FOLLOWANDEXP] Sitting to med
+[FOLLOWANDEXP] Medding (72% mana)
+```
+
+---
+
+## Where Logic Lives
+
+### States (`mage.lua`, `shaman.lua`) — The Story
+
+States describe **what the bot is doing at a high level**. They read like a story:
 
 ```lua
 execute = function()
     local c, r
 
-    c, r = buff.castBuffList(BUFFS, 8)
-    if c then return c, r end
+    -- Try to engage what the group is fighting
+    c, r = combat.assistLeader(LEADER, false, true)
+    if c then timeLastNonIdleAction = os.clock(); return c, r end
+
+    -- Nothing to fight — stand down and follow
+    combat.disengage()
 
     c, r = move.navFanFollow(LEADER, myOffset, FOLLOW_DIST)
-    if c then return c, r end
+    if c then timeLastNonIdleAction = os.clock(); return c, r end
 
-    return false, "Holding position"   -- idle reason
+    -- In range and quiet — med and rebuff
+    if idleLongEnough and not group.isGroupEngaged() then
+        c, r = doIdleTasks()
+        if c then return c, r end
+    end
+
+    return false, "Walking with " .. LEADER
 end
 ```
 
-The FSM prints the reason only when it changes — no spam, clean status output:
+States should contain **no raw `mq.TLO` calls** and **no game commands** beyond
+the `onEnter`/`onExit` cleanup blocks. If you find yourself writing decision logic
+inline in a state, it belongs in an action module.
+
+### Action Modules (`actions/`) — The Logic
+
+Action modules contain the actual decisions and commands. They are small, testable units.
+
+| Module | Responsibility |
+|--------|---------------|
+| `combat.lua` | Engagement: `assistLeader`, `engageTarget`, `disengage`, `sendPet`, `hasPet`, `hasLiveTarget` |
+| `target.lua` | Targeting: `getPcTarget`, `targetSpawn`, `targetByID`, `targetPcTarget` |
+| `melee.lua` | Assist queries: `getAssistTarget` (live NPC filter on a PC's target) |
+| `movement.lua` | Navigation: `navFanFollow`, `navToTarget`, `navToPoint`, `navToPC` |
+| `spell.lua` | Spell casting: `castSpell`, `castSummonPet`, `isSpellReady`, `willLand` |
+| `buff.lua` | Buff cycling: `castBuffList` — one target/spell per tick |
+| `group.lua` | Group state: `isGroupEngaged`, `isPcEngaged`, `getEngagedTarget`, `navGroupInvite` |
+| `util.lua` | Target resolution: `resolveTargets` (self/pet/group/name → spawn list) |
+
+### Pure Checks vs Actors
+
+**Pure checks** — read client state, no side effects, always return data (never `c, r`):
+```lua
+combat.hasPet()              -- boolean
+combat.hasLiveTarget()       -- boolean
+group.isGroupEngaged()       -- boolean
+group.isPcEngaged(name)      -- boolean
 ```
-[SETUP] Memorizing Spirit of Wolf into gem 7
-[SETUP] Casting 'Spirit of Wolf' on Beta
-[SETUP] Setup complete
-[FOLLOW] Following Alpha
+
+**Actors** — issue exactly one game command, return `(c, r)`:
+```lua
+combat.assistLeader(...)     -- targets + engages, one step per tick
+move.navFanFollow(...)       -- issues /nav or returns false if in range
+spell.castSpell(name)        -- issues /cast or returns false if not ready
 ```
+
+Movement actors (`navFanFollow`, `navToTarget`) handle their own prerequisites:
+if the bot needs to move but is sitting, they issue `/stand` first and return `true`.
+States do not manage standing.
 
 ---
 
 ## State Lifecycle
 
-Each state can define three functions:
-
 ```lua
 fsm.states["MYSTATE"] = {
-    onEnter  = function() ... end,   -- runs once on transition in
-    execute  = function() ... end,   -- runs every tick, returns (consumed, reason)
-    onExit   = function() ... end,   -- runs once on transition out
+    onEnter  = function() ... end,   -- runs once on transition in (cleanup, reset)
+    execute  = function()            -- runs every tick
+        return consumed, reason      -- c, r
+    end,
+    onExit   = function() ... end,   -- runs once on transition out (cleanup)
 }
 ```
 
-States transition by calling `fsm.changeState("NEWSTATE")`. `lastReason` is cleared
-on transition so the new state's first reason always prints.
+`onEnter`/`onExit` may issue raw commands (attack off, nav stop) since they run once.
+`execute` should use action modules exclusively.
 
 ---
 
 ## Buff System
 
-Buff lists are tables of entries with named fields:
-
 ```lua
 local BUFFS = {
-    { spellName = "Inner Fire",     refreshTime = 1800, targets = { "self" } },
-    { spellName = "Spirit of Wolf", refreshTime = 1800, targets = { "group" } },
-    { spellName = "Strengthen",     refreshTime = 1800, targets = { "self", "group" } },
+    { spellName = "Inner Fire", refreshTime = 600, targets = { "self", "group" } },
+    { spellName = "Strengthen", refreshTime = 600, targets = { "self", "group" } },
 }
 ```
 
-`targets` supports: `"self"`, `"pet"`, `"group"` (all members + their pets), or any PC name.
-
-`refreshTime` is in seconds — recast when remaining duration drops below this value.
-
-`buff.castBuffList(BUFFS, gemSlot)` cycles through the list one action per tick:
-target → check → mem if needed → wait for ready → check `willLand` → cast.
+`targets` supports: `"self"`, `"pet"`, `"group"` (all members + pets), or any PC name.
+`refreshTime` is in seconds — recast when remaining duration drops below this.
+`buff.castBuffList(BUFFS, gemSlot)` advances one action per tick.
 
 ---
 
 ## Fizzle Detection
 
-`spell.lua` registers an `mq.event()` at load time that fires during each `mq.delay()`.
-When a fizzle is detected, `castSpell` backs off for 200ms and returns `false`,
-letting the buff cycle move on naturally to the next target.
+`spell.lua` registers an `mq.event()` at load time. When a fizzle is detected,
+`castSpell` backs off for 200ms and returns `false`, letting the buff cycle continue.
 
 ---
 
 ## Adding a New Bot
 
-1. Create `booty/bot/yourname.lua` using the factory pattern:
+1. Create `booty/bot/yourname.lua`:
 ```lua
 return function(cfg)
     local LEADER, myOffset, FOLLOW_DIST = cfg.leader, cfg.offset, cfg.followDist
@@ -158,23 +191,14 @@ return function(cfg)
 end
 ```
 
-2. Register it in `init.lua`:
+2. Register in `init.lua`:
 ```lua
 local NAME_MODULES = {
     Beta  = 'booty.bot.shaman',
     Gamma = 'booty.bot.mage',
-    Delta = 'booty.bot.yourname',   -- add here
+    Delta = 'booty.bot.yourname',
 }
 ```
-
----
-
-## Adding a New Action
-
-- **Pure check**: return data, no `mq.cmd`. Can be called anywhere.
-- **Actor**: issue exactly one `mq.cmd`, return `true, reason`. Add to appropriate module by domain.
-
-Update `actions/ACTIONS.md` to track what's built and what's pending.
 
 ---
 
@@ -185,8 +209,8 @@ Update `actions/ACTIONS.md` to track what's built and what's pending.
 | `/setstate IDLE` | Stop everything, wait |
 | `/setstate INIT` | Run to leader, request group invite |
 | `/setstate FOLLOW` | Fan-follow leader |
-| `/setstate SETUP` | Buff up, summon pet, then auto-FOLLOW |
-| `/setstate MELEE` | Assist leader, fight, heal between pulls |
-| `/setstate FOLLOWANDEXP` | Follow leader, assist on everything leader attacks |
+| `/setstate SETUP` | Buff up, summon pet, then auto-transition to FOLLOW |
+| `/setstate MELEE` | Assist leader, approach target, fight |
+| `/setstate FOLLOWANDEXP` | Follow leader, assist on everything leader engages, med when idle |
 | `/setstate MAKECAMPANDEXP` | Snap camp at leader's position, hold it, assist when leader pulls |
 | `/setstate BUFFTEST` | Test buff cycle without combat |

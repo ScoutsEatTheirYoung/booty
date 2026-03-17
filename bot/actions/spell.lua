@@ -51,7 +51,7 @@ end
 ---@param spellName string
 ---@return boolean
 function spell.willLand(spellName)
-    return mq.TLO.Spell(spellName).WillLand() == true
+    return (mq.TLO.Spell(spellName).WillLand() or 0) > 0
 end
 
 ---@param spellName string
@@ -96,9 +96,6 @@ function spell.castSpell(spellName)
     end
     if not spell.hasManaForSpell(spellName) then
         return false, string.format("Not enough mana for '%s'", spellName)
-    end
-    if not spell.willLand(spellName) then
-        return false, string.format("'%s' will not land on current target", spellName)
     end
     if not mq.TLO.Me.SpellReady(gem)() then
         return true, string.format('Waiting for %s to be ready', spellName)
