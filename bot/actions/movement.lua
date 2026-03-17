@@ -28,7 +28,7 @@ function move.navToPC(pcName, meleeRange)
     if not pc() then return false, string.format('%s not found in zone', pcName) end
     if pc.Distance() <= meleeRange then return false, string.format('Already in range of %s', pcName) end
     mq.cmdf('/squelch /nav id %d distance=%d', pc.ID(), meleeRange - 2)
-    return true, string.format('Navigating to %s (%.0f units)', pcName, pc.Distance())
+    return true, string.format('Navigating to %s (%d) (%.0f units)', pcName, pc.ID(), pc.Distance())
 end
 
 --- Navigate to a fixed world position if farther than radius. Used to return to a camp point.

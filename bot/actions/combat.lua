@@ -38,26 +38,17 @@ function combat.attackOn()
     return true, 'Attack on'
 end
 
----@return boolean, string
-function combat.attackOff()
-    if not mq.TLO.Me.Combat() then return false, 'Not in combat' end
-    mq.cmd('/attack off')
-    return true, 'Attack off'
-end
-
---- Turn off attack and stand down pet if it has a target.
+--- Stand down from combat. One command per tick: attack off first, then pet back off.
 ---@return boolean, string
 function combat.disengage()
-    local acted = false
     if mq.TLO.Me.Combat() then
         mq.cmd('/attack off')
-        acted = true
+        return true, 'Disengaging'
     end
     if (mq.TLO.Me.Pet.ID() or 0) > 0 and (mq.TLO.Pet.Target.ID() or 0) > 0 then
         mq.cmd('/squelch /pet back off')
-        acted = true
+        return true, 'Calling pet back'
     end
-    if acted then return true, 'Disengaged' end
     return false, 'Not in combat'
 end
 
@@ -71,8 +62,8 @@ function combat.sendPet(targetID)
     return true, 'Pet sent to attack'
 end
 
---- Engage a target. Targets it if not already, then sends pet and/or turns on attack.
----@param target MQSpawn
+--- Engage a target. One step per tick: target → sendPet → attackOn.
+---@param target MQSpawn|MQTarget
 ---@param useMelee boolean
 ---@param usePet boolean
 ---@return boolean, string
@@ -85,16 +76,14 @@ function combat.engageTarget(target, useMelee, usePet)
         mq.cmdf('/squelch /tar id %d', id)
         return true, string.format('Targeting %s', target.Name() or tostring(id))
     end
-    local acted = false
     if usePet then
-        local c = combat.sendPet(id)
-        if c then acted = true end
+        local c, r = combat.sendPet(id)
+        if c then return c, r end
     end
     if useMelee then
-        local c = combat.attackOn()
-        if c then acted = true end
+        local c, r = combat.attackOn()
+        if c then return c, r end
     end
-    if acted then return true, 'Engaging ' .. (target.Name() or 'target') end
     return false, 'Already engaged'
 end
 
@@ -110,6 +99,7 @@ function combat.assistPc(pcName, useMelee, usePet)
     if t and (t.Type() ~= "NPC" or (t.PctHPs() or 0) <= 0) then t = nil end
     if not t then t = group.getEngagedTarget() end
     if not t then return false, 'No target to assist' end
+    if mq.TLO.Window('SpellBookWnd').Open() then return true, 'Memorizing spell' end
     if mq.TLO.Me.Sitting() then mq.cmd('/stand'); return true, 'Standing up for combat' end
     return combat.engageTarget(t, useMelee, usePet)
 end

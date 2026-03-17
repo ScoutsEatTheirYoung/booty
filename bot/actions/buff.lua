@@ -1,6 +1,7 @@
 local mq    = require('mq')
 local utils = require('booty.utils')
 local tgt   = require('booty.bot.actions.target')
+local util  = require('booty.bot.actions.util')
 local spell = require('booty.bot.actions.spell')
 
 local buff = {}
@@ -18,7 +19,8 @@ local function doesTargetNeedBuff(target, spellName, refreshTime)
     if not target or not target() then return false end
     local b = target.Buff(spellName)
     if not b() then return true end
-    local timeLeft = b.Duration.TotalSeconds() or 0
+    local timeLeft = (b.Duration and b.Duration.TotalSeconds and b.Duration.TotalSeconds())
+    if not timeLeft then return false end  -- duration unreadable (e.g. pet) — buff exists, skip recast
     return timeLeft <= refreshTime
 end
 
@@ -60,13 +62,11 @@ function buff.castBuffList(buffList, spellGem)
 
             for _, t in ipairs(resolvedTargets) do
                 if doesTargetNeedBuff(t.spawn, spellName, refreshTime) then
-                    -- Ensure spell is memorized
-                    if not spell.isSpellMemmed(spellName) then
-                        return spell.memorizeSpell(spellGem, spellName)
-                    end
-
-                    -- Wait if on cooldown
-                    if not spell.isSpellReady(spellName) then
+                    local mc, mr = spell.memorizeSpell(spellGem, spellName)
+                    if mc then return mc, mr end
+                    local gem = spell.findGemForSpell(spellName)
+                    if not gem then goto nexttarget end
+                    if not mq.TLO.Me.SpellReady(gem)() then
                         return true, string.format("Waiting for %s to be ready", spellName)
                     end
 
@@ -82,8 +82,6 @@ function buff.castBuffList(buffList, spellGem)
                         goto nexttarget
                     end
 
-                    -- Cast
-                    local gem = spell.findGemForSpell(spellName)
                     mq.cmdf('/cast %d', gem)
                     return true, string.format("Casting '%s' on %s", spellName, t.label)
                 end

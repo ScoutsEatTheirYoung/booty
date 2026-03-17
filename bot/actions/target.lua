@@ -8,7 +8,7 @@ local target = {}
 
 --- Return the spawn that pcName is currently targeting, or nil.
 ---@param pcName string
----@return MQSpawn|nil
+---@return MQTarget|nil
 function target.getPcTarget(pcName)
     local pc = mq.TLO.Spawn('pc =' .. pcName)
     if not pc() then return nil end
@@ -22,7 +22,7 @@ end
 -- ============================================================
 
 --- Target spawn if not already targeted.
----@param spawn MQSpawn|nil
+---@param spawn MQSpawn|MQTarget|nil
 ---@return boolean, string
 function target.targetSpawn(spawn)
     if not spawn or not spawn() then return false, 'Invalid spawn' end

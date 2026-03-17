@@ -10,15 +10,17 @@ local group  = require('booty.bot.actions.group')
 -- Mage config
 -- Fill in spell names for your level / server.
 -- ============================================================
-local PET_SPELL   = "Elementalkin: Water"
+local PET_SPELL   = "Elemental: Water"
 local PET_REAGENT = "Malachite"
-local PET_GEM     = 1
+local PET_GEM     = 2
 
 local BUFFS = {
-    { spellName = "Minor Shielding", refreshTime = 600, targets = { "self" } },
+    { spellName = "Lesser Shielding", refreshTime = 600, targets = { "self" } },
+    { spellName = "Shield of Fire", refreshTime = 60, targets = { "group", "pet", "self" } },
 }
 
-local NUKE_NAME = ""  ---@diagnostic disable-line: unused-local
+local NUKE_NAME = "Shock of Blades"  -- e.g. "Shock of Spikes"
+local NUKE_GEM  = 1   -- gem slot to hold the nuke
 
 local CAST_RANGE = 50
 
@@ -85,7 +87,8 @@ return function(cfg)
             if combat.hasLiveTarget() then
                 c, r = move.navToTarget(CAST_RANGE)
                 if c then return c, r end
-                -- TODO: c, r = spell.castSpell("Shock of Spikes"); if c then return c, r end
+                c, r = spell.castSpellInGem(NUKE_NAME, NUKE_GEM)
+                if c then return c, r end
                 return false, "In combat — pet attacking"
             end
 
@@ -115,7 +118,12 @@ return function(cfg)
             c, r = combat.assistPc(LEADERNAME, false, true)
             if c then timeLastNonIdleAction = os.clock(); return c, r end
 
-            combat.disengage()
+            if combat.hasLiveTarget() then
+                c, r = spell.castSpellInGem(NUKE_NAME, NUKE_GEM)
+                if c then timeLastNonIdleAction = os.clock(); return c, r end
+            else
+                combat.disengage()
+            end
 
             c, r = move.navFanFollow(LEADERNAME, myOffset, FOLLOW_DIST)
             if c then timeLastNonIdleAction = os.clock(); return c, r end
@@ -152,7 +160,7 @@ return function(cfg)
             c, r = combat.assistPc(LEADERNAME, false, true)
             if c then return c, r end
 
-            combat.disengage()
+            if not combat.hasLiveTarget() then combat.disengage() end
 
             if campPoint then
                 c, r = move.navToPoint(campPoint, CAMP_RADIUS)
