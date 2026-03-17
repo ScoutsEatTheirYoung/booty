@@ -13,7 +13,7 @@ local lastInviteRequestTime = 0
 --- True if pcName has their weapons drawn aggressively (PlayerState bits 4 or 8).
 ---@param pcName string
 ---@return boolean
-function group.isPcEngaged(pcName)
+function group.isPCEngaged(pcName)
     local pc = mq.TLO.Spawn('pc =' .. pcName)
     if not pc() then return false end
     return bit.band(pc.PlayerState() or 0, 12) ~= 0

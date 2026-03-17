@@ -94,8 +94,9 @@ end
 ---@param useMelee boolean
 ---@param usePet boolean
 ---@return boolean, string
-function combat.assistPc(pcName, useMelee, usePet)
-    local t = tgt.getPcTarget(pcName)
+function combat.assistPC(pcName, useMelee, usePet)
+    ---@type MQTarget|MQSpawn|nil
+    local t = tgt.getPCTarget(pcName)
     if t and (t.Type() ~= "NPC" or (t.PctHPs() or 0) <= 0) then t = nil end
     if not t then t = group.getEngagedTarget() end
     if not t then return false, 'No target to assist' end

@@ -6,7 +6,7 @@ local melee = {}
 ---@param pcName string
 ---@return MQSpawn|nil
 function melee.getAssistTarget(pcName)
-    local t = target.getPcTarget(pcName)
+    local t = target.getPCTarget(pcName)
     if not t then return nil end
     if t.Type() ~= "NPC" then return nil end
     if (t.PctHPs() or 0) <= 0 then return nil end

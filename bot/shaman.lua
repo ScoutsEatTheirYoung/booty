@@ -126,7 +126,7 @@ return function(cfg)
         execute = function()
             local c, r
 
-            c, r = combat.assistPc(LEADER, false, false)
+            c, r = combat.assistPC(LEADER, false, false)
             if c then return c, r end
 
             if combat.hasLiveTarget() then
@@ -172,7 +172,7 @@ return function(cfg)
             c, r = doHealCheck()
             if c then timeLastNonIdleAction = os.clock(); return c, r end
 
-            c, r = combat.assistPc(LEADER, false, false)
+            c, r = combat.assistPC(LEADER, false, false)
             if c then timeLastNonIdleAction = os.clock(); return c, r end
 
             if combat.hasLiveTarget() then
@@ -218,7 +218,7 @@ return function(cfg)
         execute = function()
             local c, r
 
-            c, r = combat.assistPc(LEADER, false, false)
+            c, r = combat.assistPC(LEADER, false, false)
             if c then return c, r end
 
             if not combat.hasLiveTarget() then combat.disengage() end

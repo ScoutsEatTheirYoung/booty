@@ -2,6 +2,11 @@ local mq = require('mq')
 
 local target = {}
 
+-- this saves hash lookups later but is a bit less clear than mq.TLO.Target everywhere
+local mqTarget = mq.TLO.Target
+local mqSpawn  = mq.TLO.Spawn
+local cmdf     = mq.cmdf
+
 -- ============================================================
 -- Pure checks  (get*)
 -- ============================================================
@@ -9,8 +14,8 @@ local target = {}
 --- Return the spawn that pcName is currently targeting, or nil.
 ---@param pcName string
 ---@return MQTarget|nil
-function target.getPcTarget(pcName)
-    local pc = mq.TLO.Spawn('pc =' .. pcName)
+function target.getPCTarget(pcName)
+    local pc = mqSpawn('pc =' .. pcName)
     if not pc() then return nil end
     local t = pc.TargetOfTarget
     if not t() then return nil end
@@ -27,8 +32,8 @@ end
 function target.targetSpawn(spawn)
     if not spawn or not spawn() then return false, 'Invalid spawn' end
     local id = spawn.ID()
-    if mq.TLO.Target.ID() == id then return false, 'Already targeted' end
-    mq.cmdf('/squelch /tar id %d', id)
+    if mqTarget.ID() == id then return false, 'Already targeted' end
+    cmdf('/squelch /tar id %d', id)
     return true, string.format('Targeting %s', spawn.Name() or tostring(id))
 end
 
@@ -37,16 +42,16 @@ end
 ---@return boolean, string
 function target.targetByID(id)
     if not id or id <= 0 then return false, 'Invalid spawn ID' end
-    if mq.TLO.Target.ID() == id then return false, 'Already targeted' end
-    mq.cmdf('/squelch /tar id %d', id)
+    if mqTarget.ID() == id then return false, 'Already targeted' end
+    cmdf('/squelch /tar id %d', id)
     return true, string.format('Targeting spawn ID %d', id)
 end
 
 --- Target what pcName is targeting. Uses TargetOfTarget — no /assist command.
 ---@param pcName string
 ---@return boolean, string
-function target.targetPcTarget(pcName)
-    local t = target.getPcTarget(pcName)
+function target.targetPCTarget(pcName)
+    local t = target.getPCTarget(pcName)
     if not t then return false, string.format('%s has no target', pcName) end
     return target.targetSpawn(t)
 end
