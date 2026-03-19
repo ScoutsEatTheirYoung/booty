@@ -84,7 +84,7 @@ fsm.states["GUILDHALLPORT"] = {
         end
         local c, r = travel.ascendantGuildHallPort(guildHallPort.porterName, guildHallPort.location)
         if c then return c, r end
-        
+        fsm.changeState("FOLLOW")
     end,
     onExit = function()
         mq.cmd('/squelch /nav stop')
