@@ -62,7 +62,13 @@ function travel.ascendantGuildHallPort(porterName, location)
         return false, "Liminal not supported yet, manual intervention required"
     end
     if portPhase == PORT_PHASE.NONE then
-        mq.cmdf('/say %s', location)
+        local sayString = ""
+        if porterName:lower() == "liminal" then 
+            sayString = string.format('/say travel %s', location:lower())
+        else 
+            sayString = string.format('/say %s', location:lower()) 
+        end
+        mq.cmdf(sayString)
         portPhase = PORT_PHASE.TODESTINATION
     end
     return true, string.format('Waiting to zone to %s', location)
