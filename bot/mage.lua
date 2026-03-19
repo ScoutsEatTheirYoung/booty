@@ -1,25 +1,27 @@
-local mq     = require('mq')
-local fsm    = require('booty.bot.fsm')
-local move   = require('booty.bot.actions.movement')
-local combat = require('booty.bot.actions.combat')
-local buff   = require('booty.bot.actions.buff')
-local spell  = require('booty.bot.actions.spell')
-local group  = require('booty.bot.actions.group')
+local mq            = require('mq')
+local fsm           = require('booty.bot.fsm')
+local movementActions = require('booty.bot.bricks.movementActions')
+local combatActions = require('booty.bot.bricks.combatActions')
+local combatUtils   = require('booty.bot.bricks.combatUtils')
+local buffActions   = require('booty.bot.bricks.buffActions')
+local spellActions  = require('booty.bot.bricks.spellActions')
+local groupUtils    = require('booty.bot.bricks.groupUtils')
 
 -- ============================================================
 -- Mage config
 -- Fill in spell names for your level / server.
 -- ============================================================
-local PET_SPELL   = "Elemental: Water"
+local PET_SPELL   = "Minor Summoning: Water"
 local PET_REAGENT = "Malachite"
 local PET_GEM     = 2
 
 local BUFFS = {
     { spellName = "Lesser Shielding", refreshTime = 600, targets = { "self" } },
+    { spellName = "Burnout", refreshTime = 600, targets = { "pet" } },
     { spellName = "Shield of Fire", refreshTime = 60, targets = { "group", "pet", "self" } },
 }
 
-local NUKE_NAME = "Shock of Blades"  -- e.g. "Shock of Spikes"
+local NUKE_NAME = "Shock of Flame"  -- e.g. "Shock of Spikes"
 local NUKE_GEM  = 1   -- gem slot to hold the nuke
 
 local CAST_RANGE = 50
@@ -43,7 +45,7 @@ return function(cfg)
             mq.cmd('/sit')
             return true, 'Sitting to med'
         end
-        local c, r = buff.castBuffList(BUFFS, 8)
+        local c, r = buffActions.castBuffList(BUFFS, 8)
         if c then return c, r end
         return false, string.format('Medding (%d%% mana)', pctMana)
     end
@@ -59,13 +61,13 @@ return function(cfg)
         execute = function()
             local c, r
 
-            if not combat.hasPet() then
-                c, r = spell.castSummonPet(PET_SPELL, PET_GEM, PET_REAGENT)
+            if not combatUtils.hasPet() then
+                c, r = spellActions.castSummonPet(PET_SPELL, PET_GEM, PET_REAGENT)
                 if c then return c, r end
                 return false, r or "Waiting to summon pet"
             end
 
-            c, r = buff.castBuffList(BUFFS, 8)
+            c, r = buffActions.castBuffList(BUFFS, 8)
             if c then return c, r end
 
             fsm.changeState("FOLLOW")
@@ -81,24 +83,24 @@ return function(cfg)
         execute = function()
             local c, r
 
-            c, r = combat.assistPC(LEADERNAME, false, true)
+            c, r = combatActions.assistPC(LEADERNAME, false, true)
             if c then return c, r end
 
-            if combat.hasLiveTarget() then
-                c, r = move.navToTarget(CAST_RANGE)
+            if combatUtils.hasLiveTarget() then
+                c, r = movementActions.navToTarget(CAST_RANGE)
                 if c then return c, r end
-                c, r = spell.castSpellInGem(NUKE_NAME, NUKE_GEM)
+                c, r = spellActions.castSpellInGem(NUKE_NAME, NUKE_GEM)
                 if c then return c, r end
                 return false, "In combat — pet attacking"
             end
 
-            combat.disengage()
-            c, r = move.navFanFollow(LEADERNAME, myOffset, FOLLOW_DIST)
+            combatActions.disengage()
+            c, r = movementActions.navFanFollow(LEADERNAME, myOffset, FOLLOW_DIST)
             if c then return c, r end
             return false, "Holding position near leader"
         end,
         onExit = function()
-            combat.disengage()
+            combatActions.disengage()
             mq.cmd('/squelch /nav stop')
         end,
     }
@@ -115,21 +117,21 @@ return function(cfg)
         execute = function()
             local c, r
 
-            c, r = combat.assistPC(LEADERNAME, false, true)
+            c, r = combatActions.assistPC(LEADERNAME, false, true)
             if c then timeLastNonIdleAction = os.clock(); return c, r end
 
-            if combat.hasLiveTarget() then
-                c, r = spell.castSpellInGem(NUKE_NAME, NUKE_GEM)
+            if combatUtils.hasLiveTarget() then
+                c, r = spellActions.castSpellInGem(NUKE_NAME, NUKE_GEM)
                 if c then timeLastNonIdleAction = os.clock(); return c, r end
             else
-                combat.disengage()
+                combatActions.disengage()
             end
 
-            c, r = move.navFanFollow(LEADERNAME, myOffset, FOLLOW_DIST)
+            c, r = movementActions.navFanFollow(LEADERNAME, myOffset, FOLLOW_DIST)
             if c then timeLastNonIdleAction = os.clock(); return c, r end
 
             if (os.clock() - timeLastNonIdleAction) >= IDLE_THRESHOLD
-                    and not group.isGroupEngaged() then
+                    and not groupUtils.isGroupEngaged() then
                 c, r = doIdleTasks()
                 if c then return c, r end
             end
@@ -138,7 +140,7 @@ return function(cfg)
         end,
         onExit = function()
             mq.cmd('/stand')
-            combat.disengage()
+            combatActions.disengage()
             mq.cmd('/squelch /nav stop')
         end,
     }
@@ -157,20 +159,20 @@ return function(cfg)
         execute = function()
             local c, r
 
-            c, r = combat.assistPC(LEADERNAME, false, true)
+            c, r = combatActions.assistPC(LEADERNAME, false, true)
             if c then return c, r end
 
-            if not combat.hasLiveTarget() then combat.disengage() end
+            if not combatUtils.hasLiveTarget() then combatActions.disengage() end
 
             if campPoint then
-                c, r = move.navToPoint(campPoint, CAMP_RADIUS)
+                c, r = movementActions.navToPoint(campPoint, CAMP_RADIUS)
                 if c then return c, r end
             end
 
             return false, "Holding camp"
         end,
         onExit = function()
-            combat.disengage()
+            combatActions.disengage()
             mq.cmd('/squelch /nav stop')
         end,
     }

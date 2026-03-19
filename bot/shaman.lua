@@ -1,11 +1,13 @@
-local mq     = require('mq')
-local fsm    = require('booty.bot.fsm')
-local move   = require('booty.bot.actions.movement')
-local combat = require('booty.bot.actions.combat')
-local buff   = require('booty.bot.actions.buff')
-local spell  = require('booty.bot.actions.spell')
-local tgt    = require('booty.bot.actions.target')
-local group  = require('booty.bot.actions.group')
+local mq            = require('mq')
+local fsm           = require('booty.bot.fsm')
+local movementActions = require('booty.bot.bricks.movementActions')
+local combatActions = require('booty.bot.bricks.combatActions')
+local combatUtils   = require('booty.bot.bricks.combatUtils')
+local buffActions   = require('booty.bot.bricks.buffActions')
+local spellActions  = require('booty.bot.bricks.spellActions')
+local spellUtils    = require('booty.bot.bricks.spellUtils')
+local targetActions = require('booty.bot.bricks.targetActions')
+local groupUtils    = require('booty.bot.bricks.groupUtils')
 
 -- ============================================================
 -- Shaman config
@@ -49,18 +51,18 @@ return function(cfg)
         if not HEAL_NAME or HEAL_NAME == "" then return false, "No heal configured" end
 
         -- Always keep heal memmed — if not on bar, mem it now before anything else
-        if not spell.isOnBar(HEAL_NAME) then
-            return spell.memorizeSpell(HEAL_GEM, HEAL_NAME)
+        if not spellUtils.isOnBar(HEAL_NAME) then
+            return spellActions.memorizeSpell(HEAL_GEM, HEAL_NAME)
         end
 
-        local threshold = group.isGroupEngaged() and HEAL_EMERGENCY_PCT or HEAL_PCT
+        local threshold = groupUtils.isGroupEngaged() and HEAL_EMERGENCY_PCT or HEAL_PCT
 
         local function tryHeal(spawn, name)
             if not spawn or not spawn() then return false, "" end
             if (spawn.PctHPs() or 100) >= threshold then return false, "" end
-            local c = tgt.targetSpawn(spawn)
+            local c = targetActions.targetSpawn(spawn)
             if c then return true, string.format("Targeting %s to heal", name) end
-            c = spell.castSpellInGem(HEAL_NAME, HEAL_GEM)
+            c = spellActions.castSpellInGem(HEAL_NAME, HEAL_GEM)
             if c then return true, string.format("Healing %s (%d%%)", name, spawn.PctHPs() or 0) end
             return false, ""
         end
@@ -93,7 +95,7 @@ return function(cfg)
             mq.cmd('/sit')
             return true, 'Sitting to med'
         end
-        local c, r = buff.castBuffList(BUFFS, 8)
+        local c, r = buffActions.castBuffList(BUFFS, 8)
         if c then return c, r end
         return false, string.format('Medding (%d%% mana)', pctMana)
     end
@@ -109,7 +111,7 @@ return function(cfg)
         execute = function()
             local c, r
 
-            c, r = buff.castBuffList(BUFFS, 8)
+            c, r = buffActions.castBuffList(BUFFS, 8)
             if c then return c, r end
 
             fsm.changeState("FOLLOW")
@@ -126,14 +128,14 @@ return function(cfg)
         execute = function()
             local c, r
 
-            c, r = combat.assistPC(LEADER, false, false)
+            c, r = combatActions.assistPC(LEADER, false, false)
             if c then return c, r end
 
-            if combat.hasLiveTarget() then
-                c, r = move.navToTarget(CAST_RANGE)
+            if combatUtils.hasLiveTarget() then
+                c, r = movementActions.navToTarget(CAST_RANGE)
                 if c then return c, r end
-                -- TODO: c, r = spell.castSpell("slow"); if c then return c, r end
-                -- TODO: c, r = spell.castSpell("DoT");  if c then return c, r end
+                -- TODO: c, r = spellActions.castSpell("slow"); if c then return c, r end
+                -- TODO: c, r = spellActions.castSpell("DoT");  if c then return c, r end
                 return false, "In combat — waiting for spell opportunities"
             end
 
@@ -141,13 +143,13 @@ return function(cfg)
             for i = 1, count do
                 local m = mq.TLO.Group.Member(i)
                 if m and m.Name() and (m.PctHPs() or 100) < HEAL_PCT then
-                    -- TODO: c, r = spell.castHeal(...); if c then return c, r end
+                    -- TODO: c, r = spellActions.castHeal(...); if c then return c, r end
                     return false, string.format("Waiting to heal %s (%d%%)", m.Name(), m.PctHPs())
                 end
             end
 
-            combat.disengage()
-            c, r = move.navFanFollow(LEADER, myOffset, FOLLOW_DIST)
+            combatActions.disengage()
+            c, r = movementActions.navFanFollow(LEADER, myOffset, FOLLOW_DIST)
             if c then return c, r end
             return false, "Holding position near leader"
         end,
@@ -172,24 +174,24 @@ return function(cfg)
             c, r = doHealCheck()
             if c then timeLastNonIdleAction = os.clock(); return c, r end
 
-            c, r = combat.assistPC(LEADER, false, false)
+            c, r = combatActions.assistPC(LEADER, false, false)
             if c then timeLastNonIdleAction = os.clock(); return c, r end
 
-            if combat.hasLiveTarget() then
+            if combatUtils.hasLiveTarget() then
                 local pctMana = mq.TLO.Me.PctMana() or 0
                 if pctMana >= NUKE_MANA then
-                    c, r = spell.castSpellInGem(NUKE_NAME, NUKE_GEM)
+                    c, r = spellActions.castSpellInGem(NUKE_NAME, NUKE_GEM)
                     if c then timeLastNonIdleAction = os.clock(); return c, r end
                 end
             else
-                combat.disengage()
+                combatActions.disengage()
             end
 
-            c, r = move.navFanFollow(LEADER, myOffset, FOLLOW_DIST)
+            c, r = movementActions.navFanFollow(LEADER, myOffset, FOLLOW_DIST)
             if c then timeLastNonIdleAction = os.clock(); return c, r end
 
             if (os.clock() - timeLastNonIdleAction) >= IDLE_THRESHOLD
-                    and not group.isGroupEngaged() then
+                    and not groupUtils.isGroupEngaged() then
                 c, r = doIdleTasks()
                 if c then return c, r end
             end
@@ -218,13 +220,13 @@ return function(cfg)
         execute = function()
             local c, r
 
-            c, r = combat.assistPC(LEADER, false, false)
+            c, r = combatActions.assistPC(LEADER, false, false)
             if c then return c, r end
 
-            if not combat.hasLiveTarget() then combat.disengage() end
+            if not combatUtils.hasLiveTarget() then combatActions.disengage() end
 
             if campPoint then
-                c, r = move.navToPoint(campPoint, CAMP_RADIUS)
+                c, r = movementActions.navToPoint(campPoint, CAMP_RADIUS)
                 if c then return c, r end
             end
 

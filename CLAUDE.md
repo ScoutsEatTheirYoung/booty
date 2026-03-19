@@ -43,19 +43,26 @@ booty/
 ├── hud/
 │   └── init.lua          ImGui HUD: 60fps render callback + 10fps data gatherer (non-blocking)
 ├── bot/
-│   ├── init.lua          Bot entry point — shared states (IDLE/INIT/FOLLOW), dispatches by name
+│   ├── init.lua          Bot entry point — shared states (IDLE/INIT/FOLLOW/GUILDHALLPORT), dispatches by name
 │   ├── fsm.lua           FSM engine: changeState(), update(), /setstate slash command
 │   ├── shaman.lua        Shaman class states (SETUP/MELEE/FOLLOWANDEXP/MAKECAMPANDEXP)
 │   ├── mage.lua          Mage class states (SETUP/MELEE/FOLLOWANDEXP/MAKECAMPANDEXP)
-│   └── actions/
-│       ├── combat.lua    isInCombat, hasLiveTarget, hasPet, attackOn/Off, disengage, sendPet, engageTarget, assistLeader
-│       ├── target.lua    getPcTarget, targetSpawn, targetByID, targetPcTarget
-│       ├── melee.lua     getAssistTarget(pcName) — live NPC filter on PC's target
-│       ├── movement.lua  navFanFollow, navToTarget, navToPC, navToPoint
-│       ├── spell.lua     findGemForSpell, isSpellMemmed, isSpellReady, castSpell, castSummonPet, willLand
-│       ├── buff.lua      castBuffList(BUFFS, gemSlotStart) — cast/rebuff cycle
-│       ├── group.lua     isGroupEngaged, isPcEngaged, getEngagedTarget, isGrouped, navGroupInvite
-│       └── util.lua      resolveTargets — "self"/"pet"/"group"/name → spawn list
+│   ├── travel.lua        Guild hall port utility: ascendantGuildHallPort(porterName, location)
+│   └── bricks/
+│       ├── combatActions.lua    attackOn, disengage, sendPet, engageTarget, assistPC
+│       ├── combatUtils.lua      isInCombat, hasLiveTarget, hasPet
+│       ├── targetActions.lua    targetSpawn, targetByID, targetPCTarget
+│       ├── targetUtils.lua      getPCTarget, resolveTargets
+│       ├── meleeUtils.lua       getAssistTarget(pcName) — live NPC filter on PC's target
+│       ├── movementActions.lua  navFanFollow, navToTarget, navToPC, navToPoint, navToSpawn, navToGuildhallPort
+│       ├── movementUtils.lua    distanceTo, standIfNeeded
+│       ├── spellActions.lua     memorizeSpell, castSpell, castSpellInGem, castSummonPet
+│       ├── spellUtils.lua       findGemForSpell, isSpellMemmed, isOnBar, isSpellReady, willLand, hasManaForSpell
+│       ├── buffActions.lua      castBuffList(BUFFS, gemSlot) — cast/rebuff cycle
+│       ├── groupActions.lua     navGroupInvite, resetInviteTimer
+│       ├── groupUtils.lua       isGroupEngaged, isPCEngaged, getEngagedTarget, isGrouped, hasPendingInvite
+│       ├── altabilityActions.lua  castAA(aaName)
+│       └── altabilityUtils.lua    hasAA, isAAReady
 └── search/item/init.lua  ImGui inventory browser with item icons
 ```
 
@@ -117,74 +124,111 @@ end
 
 ## Key Modules Reference
 
-### combat.lua
+### combatUtils.lua (pure checks)
 ```lua
-combat.isInCombat()                              -- Me.Combat()
-combat.hasLiveTarget()                            -- Target is live NPC
-combat.hasPet()                                  -- Me.Pet.ID() > 0
-combat.attackOn() / attackOff()
-combat.disengage()                               -- attack off + pet back off (only if pet has target)
-combat.sendPet(targetID)                         -- /pet attack if not already on target
-combat.engageTarget(target, melee, pet)          -- target→sendPet→attackOn, one step per tick
-combat.assistPc(pcName, melee, pet)             -- main combat entry point for states:
-                                                 -- finds live NPC (PC's target → XTargets),
-                                                 -- stands if sitting, then engageTarget
+combatUtils.isInCombat()        -- Me.Combat()
+combatUtils.hasLiveTarget()     -- target is live NPC
+combatUtils.hasPet()            -- Me.Pet.ID() > 0
 ```
 
-### melee.lua
+### combatActions.lua
 ```lua
-melee.getAssistTarget(pcName)   -- leader's target if live NPC, else nil
-melee.targetPcTarget(pcName)    -- /tar id on leader's target
+combatActions.attackOn()                          -- /attack on if not already in combat
+combatActions.disengage()                         -- attack off → pet back off, one step per tick
+combatActions.sendPet(targetID)                   -- /pet attack if not already on target
+combatActions.engageTarget(target, melee, pet)    -- target→sendPet→attackOn, one step per tick
+combatActions.assistPC(pcName, melee, pet)        -- main combat entry point for states:
+                                                  -- finds live NPC (PC's target → XTargets),
+                                                  -- stands if sitting, then engageTarget
 ```
 
-### group.lua
+### targetUtils.lua (pure checks)
 ```lua
-group.isGroupEngaged()          -- any XTarget entry exists
-group.isPcEngaged(pcName)       -- spawn PlayerState & 12 (bits 4+8 = Aggressive/ForcedAggressive)
-group.getEngagedTarget()        -- first live NPC from XTarget list, or nil
-group.isGrouped()
-group.navGroupInvite(leader, cooldown, dist)
+targetUtils.getPCTarget(pcName)     -- spawn.TargetOfTarget = what that PC is targeting, or nil
+targetUtils.resolveTargets(list)    -- "self"/"pet"/"group"/name → [{spawn, label}]
 ```
 
-### spell.lua
+### targetActions.lua
 ```lua
-spell.willLand(spellName)           -- WillLand() > 0 (returns buff slot number, not bool!)
-spell.castSpell(spellName)          -- mana+gem+ready checks, then /cast
-spell.castSummonPet(name, gem, reagent)
-spell.isSpellReady(spellName)
-spell.findGemForSpell(spellName)
+targetActions.targetSpawn(spawn)        -- /tar id if not already targeted
+targetActions.targetByID(id)
+targetActions.targetPCTarget(pcName)    -- /tar id on leader's target
 ```
 
-### buff.lua (actions)
+### meleeUtils.lua (pure checks)
+```lua
+meleeUtils.getAssistTarget(pcName)  -- leader's target if live NPC, else nil
+```
+
+### groupUtils.lua (pure checks)
+```lua
+groupUtils.isGroupEngaged()         -- any XTarget entry exists
+groupUtils.isPCEngaged(pcName)      -- spawn PlayerState & 12 (bits 4+8 = Aggressive/ForcedAggressive)
+groupUtils.getEngagedTarget()       -- first live NPC from XTarget list, or nil
+groupUtils.isGrouped()
+groupUtils.hasPendingInvite()       -- Me.Invited()
+```
+
+### groupActions.lua
+```lua
+groupActions.navGroupInvite(leader, cooldown, dist)  -- run to leader, request invite, accept it
+groupActions.resetInviteTimer()                       -- call from INIT onEnter
+```
+
+### spellUtils.lua (pure checks)
+```lua
+spellUtils.findGemForSpell(spellName)   -- gem slot number or nil
+spellUtils.isSpellMemmed(spellName)     -- boolean
+spellUtils.isOnBar(spellName)           -- boolean
+spellUtils.isSpellReady(spellName)      -- boolean
+spellUtils.willLand(spellName)          -- WillLand() > 0 (buff slot number, not bool!)
+spellUtils.hasManaForSpell(spellName)   -- boolean
+```
+
+### spellActions.lua
+```lua
+spellActions.memorizeSpell(gemNum, spellName)        -- /memspell if not already on bar
+spellActions.castSpell(spellName)                    -- mana+gem+ready checks, then /cast
+spellActions.castSpellInGem(spellName, gemNum)       -- mem into gem if needed, then cast
+spellActions.castSummonPet(spellName, gemNum, reagent)
+```
+
+### buffActions.lua
 ```lua
 -- BUFFS config format:
 local BUFFS = {
     { spellName = "Inner Fire", refreshTime = 600, targets = { "self", "group" } },
 }
-buff.castBuffList(BUFFS, startGem)   -- iterates targets, checks willLand, casts if needed
+buffActions.castBuffList(BUFFS, gemSlot)   -- iterates targets, checks willLand, casts if needed
 ```
 
-`willLand` returns `false` when buff is already active (not expired) — this is correct, skip casting.
+`willLand` returns `false` when buff is already active (not expired) — correct, skip casting.
 
-### target.lua
+### movementUtils.lua (pure checks)
 ```lua
-target.getPcTarget(pcName)      -- spawn.TargetOfTarget = what that PC is currently targeting, or nil
-target.targetSpawn(spawn)       -- /tar id if not already targeted
-target.targetByID(id)
-target.targetPcTarget(pcName)   -- /tar id on leader's target
+movementUtils.distanceTo(point)     -- 2D distance to {x, y} point
+movementUtils.standIfNeeded()       -- /stand if sitting, returns c, r
 ```
 
-### util.lua
+### movementActions.lua
 ```lua
-util.resolveTargets(list)       -- "self"/"pet"/"group"/name → [{spawn, label}]
+movementActions.navFanFollow(leader, offset, dist)  -- fan formation follow (non-blocking)
+movementActions.navToTarget(range)                  -- approach current target (non-blocking)
+movementActions.navToPC(name, dist)
+movementActions.navToPoint(point, radius)           -- navigate to {x, y} (blocking)
+movementActions.navToSpawn(spawn, range)            -- navigate to spawn (blocking)
+movementActions.navToGuildhallPort()                -- navigate to guild lobby portal (blocking)
 ```
 
-### movement.lua
+### altabilityUtils.lua (pure checks)
 ```lua
-move.navFanFollow(leader, offset, dist)   -- fan formation follow
-move.navToTarget(range)                   -- approach current target
-move.navToPC(name, dist)
-move.navToPoint(point, radius)            -- {x, y} point
+altabilityUtils.hasAA(aaName)      -- boolean: AA is purchased
+altabilityUtils.isAAReady(aaName)  -- boolean: AA exists and is off cooldown
+```
+
+### altabilityActions.lua
+```lua
+altabilityActions.castAA(aaName)   -- /alt activate if owned and ready
 ```
 
 ## Class Bot Config Pattern
@@ -225,12 +269,12 @@ commands belong in action modules.
 -- Good — reads like a story
 execute = function()
     local c, r
-    c, r = combat.assistLeader(LEADER, false, true)
+    c, r = combatActions.assistPC(LEADER, false, true)
     if c then timeLastNonIdleAction = os.clock(); return c, r end
-    combat.disengage()
-    c, r = move.navFanFollow(LEADER, myOffset, FOLLOW_DIST)
+    combatActions.disengage()
+    c, r = movementActions.navFanFollow(LEADER, myOffset, FOLLOW_DIST)
     if c then timeLastNonIdleAction = os.clock(); return c, r end
-    if idleEnough and not group.isGroupEngaged() then
+    if idleEnough and not groupUtils.isGroupEngaged() then
         c, r = doIdleTasks()
         if c then return c, r end
     end
@@ -244,17 +288,17 @@ Each action module owns one domain. Functions are either **pure checks** or **ac
 
 **Pure checks** — read client state, no side effects, return plain values (never `c, r`):
 ```lua
-combat.hasPet()           -- boolean
-combat.hasLiveTarget()    -- boolean
-group.isGroupEngaged()    -- boolean
-group.isPcEngaged(name)   -- boolean
+combatUtils.hasPet()           -- boolean
+combatUtils.hasLiveTarget()    -- boolean
+groupUtils.isGroupEngaged()    -- boolean
+groupUtils.isPCEngaged(name)   -- boolean
 ```
 
 **Actors** — issue exactly one game command, return `(c, r)`:
 ```lua
-combat.assistPc(...)      -- targets + engages, one step per tick
-move.navFanFollow(...)    -- /nav or false if in range
-spell.castSpell(name)     -- /cast or false if not ready
+combatActions.assistPC(...)         -- targets + engages, one step per tick
+movementActions.navFanFollow(...)   -- /nav or false if in range
+spellActions.castSpell(name)        -- /cast or false if not ready
 ```
 
 ### Movement Handles Its Own Prerequisites
@@ -262,7 +306,7 @@ spell.castSpell(name)     -- /cast or false if not ready
 `navFanFollow` and `navToTarget` issue `/stand` if the bot is sitting and needs to move.
 States do not manage standing before movement calls.
 
-`combat.assistLeader` issues `/stand` if sitting and combat is needed.
+`combatActions.assistPC` issues `/stand` if sitting and combat is needed.
 States do not manage standing before combat calls.
 
 ### `onEnter`/`onExit` May Use Raw Commands

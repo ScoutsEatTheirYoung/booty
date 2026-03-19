@@ -80,17 +80,17 @@ execute = function()
     local c, r
 
     -- Try to engage what the group is fighting
-    c, r = combat.assistLeader(LEADER, false, true)
+    c, r = combatActions.assistPC(LEADER, false, true)
     if c then timeLastNonIdleAction = os.clock(); return c, r end
 
     -- Nothing to fight — stand down and follow
-    combat.disengage()
+    combatActions.disengage()
 
-    c, r = move.navFanFollow(LEADER, myOffset, FOLLOW_DIST)
+    c, r = movementActions.navFanFollow(LEADER, myOffset, FOLLOW_DIST)
     if c then timeLastNonIdleAction = os.clock(); return c, r end
 
     -- In range and quiet — med and rebuff
-    if idleLongEnough and not group.isGroupEngaged() then
+    if idleLongEnough and not groupUtils.isGroupEngaged() then
         c, r = doIdleTasks()
         if c then return c, r end
     end
@@ -103,36 +103,43 @@ States should contain **no raw `mq.TLO` calls** and **no game commands** beyond
 the `onEnter`/`onExit` cleanup blocks. If you find yourself writing decision logic
 inline in a state, it belongs in an action module.
 
-### Action Modules (`actions/`) — The Logic
+### Bricks (`bricks/`) — The Logic
 
-Action modules contain the actual decisions and commands. They are small, testable units.
+Bricks contain the actual decisions and commands. Each domain is split into a `*Utils.lua`
+(pure checks, no side effects) and an `*Actions.lua` (actors that issue game commands).
 
 | Module | Responsibility |
 |--------|---------------|
-| `combat.lua` | Engagement: `assistLeader`, `engageTarget`, `disengage`, `sendPet`, `hasPet`, `hasLiveTarget` |
-| `target.lua` | Targeting: `getPcTarget`, `targetSpawn`, `targetByID`, `targetPcTarget` |
-| `melee.lua` | Assist queries: `getAssistTarget` (live NPC filter on a PC's target) |
-| `movement.lua` | Navigation: `navFanFollow`, `navToTarget`, `navToPoint`, `navToPC` |
-| `spell.lua` | Spell casting: `castSpell`, `castSummonPet`, `isSpellReady`, `willLand` |
-| `buff.lua` | Buff cycling: `castBuffList` — one target/spell per tick |
-| `group.lua` | Group state: `isGroupEngaged`, `isPcEngaged`, `getEngagedTarget`, `navGroupInvite` |
-| `util.lua` | Target resolution: `resolveTargets` (self/pet/group/name → spawn list) |
+| `combatUtils.lua` | Pure checks: `isInCombat`, `hasLiveTarget`, `hasPet` |
+| `combatActions.lua` | Engagement: `assistPC`, `engageTarget`, `disengage`, `sendPet`, `attackOn` |
+| `targetUtils.lua` | Pure checks: `getPCTarget`, `resolveTargets` (self/pet/group/name → spawn list) |
+| `targetActions.lua` | Targeting: `targetSpawn`, `targetByID`, `targetPCTarget` |
+| `meleeUtils.lua` | Pure check: `getAssistTarget` (live NPC filter on a PC's target) |
+| `movementUtils.lua` | Pure checks: `distanceTo`, `standIfNeeded` |
+| `movementActions.lua` | Navigation: `navFanFollow`, `navToTarget`, `navToPC`, `navToPoint`, `navToSpawn`, `navToGuildhallPort` |
+| `spellUtils.lua` | Pure checks: `findGemForSpell`, `isSpellMemmed`, `isOnBar`, `isSpellReady`, `willLand`, `hasManaForSpell` |
+| `spellActions.lua` | Spell casting: `memorizeSpell`, `castSpell`, `castSpellInGem`, `castSummonPet` |
+| `buffActions.lua` | Buff cycling: `castBuffList` — one target/spell per tick |
+| `groupUtils.lua` | Group state: `isGroupEngaged`, `isPCEngaged`, `getEngagedTarget`, `isGrouped`, `hasPendingInvite` |
+| `groupActions.lua` | Group actions: `navGroupInvite`, `resetInviteTimer` |
+| `altabilityUtils.lua` | Pure checks: `hasAA`, `isAAReady` |
+| `altabilityActions.lua` | AA activation: `castAA` |
 
 ### Pure Checks vs Actors
 
 **Pure checks** — read client state, no side effects, always return data (never `c, r`):
 ```lua
-combat.hasPet()              -- boolean
-combat.hasLiveTarget()       -- boolean
-group.isGroupEngaged()       -- boolean
-group.isPcEngaged(name)      -- boolean
+combatUtils.hasPet()              -- boolean
+combatUtils.hasLiveTarget()       -- boolean
+groupUtils.isGroupEngaged()       -- boolean
+groupUtils.isPCEngaged(name)      -- boolean
 ```
 
 **Actors** — issue exactly one game command, return `(c, r)`:
 ```lua
-combat.assistLeader(...)     -- targets + engages, one step per tick
-move.navFanFollow(...)       -- issues /nav or returns false if in range
-spell.castSpell(name)        -- issues /cast or returns false if not ready
+combatActions.assistPC(...)          -- targets + engages, one step per tick
+movementActions.navFanFollow(...)    -- issues /nav or returns false if in range
+spellActions.castSpell(name)         -- issues /cast or returns false if not ready
 ```
 
 Movement actors (`navFanFollow`, `navToTarget`) handle their own prerequisites:

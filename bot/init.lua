@@ -1,7 +1,9 @@
-local mq    = require('mq')
-local fsm   = require('booty.bot.fsm')
-local move  = require('booty.bot.actions.movement')
-local group = require('booty.bot.actions.group')
+local mq            = require('mq')
+local fsm           = require('booty.bot.fsm')
+local movementActions = require('booty.bot.bricks.movementActions')
+local groupActions  = require('booty.bot.bricks.groupActions')
+local groupUtils    = require('booty.bot.bricks.groupUtils')
+local travel        = require('booty.bot.travel')
 
 -- ============================================================
 -- Shared config — class modules receive this table
@@ -46,14 +48,14 @@ fsm.states["INIT"] = {
     onEnter = function()
         mq.cmd('/attack off')
         mq.cmd('/squelch /pet back off')
-        group.resetInviteTimer()
+        groupActions.resetInviteTimer()
     end,
     execute = function()
-        if group.isGrouped() then
+        if groupUtils.isGrouped() then
             fsm.changeState("FOLLOW")
             return
         end
-        local c, r = group.navGroupInvite(LEADER, INVITE_COOLDOWN, INIT_CLOSE_DIST)
+        local c, r = groupActions.navGroupInvite(LEADER, INVITE_COOLDOWN, INIT_CLOSE_DIST)
         if c then return c, r end
         return false, "Waiting for group invite"
     end,
@@ -61,6 +63,41 @@ fsm.states["INIT"] = {
         mq.cmd('/squelch /nav stop')
     end,
 }
+
+-- ============================================================
+-- State: GUILDHALLPORT (shared)
+-- Params set by /guildport <porter> <location> before transitioning.
+-- ============================================================
+local guildHallPort = {
+    porterName = nil,
+    location = nil,
+}
+
+fsm.states["GUILDHALLPORT"] = {
+    onEnter = function()
+        mq.cmd('/attack off')
+        mq.cmd('/squelch /pet back off')
+    end,
+    execute = function()
+        if not guildHallPort.porterName or not guildHallPort.location then
+            return false, "No port destination set — use /guildport <porter> <location>"
+        end
+        local c, r = travel.ascendantGuildHallPort(guildHallPort.porterName, guildHallPort.location)
+        if c then return c, r end
+        
+    end,
+    onExit = function()
+        mq.cmd('/squelch /nav stop')
+        guildHallPort.porterName = nil
+        guildHallPort.location = nil
+    end,
+}
+
+mq.bind('/guildport', function(porter, location)
+    guildHallPort.porterName = porter
+    guildHallPort.location = location
+    fsm.changeState("GUILDHALLPORT")
+end)
 
 -- ============================================================
 -- State: FOLLOW (shared)
@@ -71,7 +108,7 @@ fsm.states["FOLLOW"] = {
         mq.cmd('/squelch /pet back off')
     end,
     execute = function()
-        local c, r = move.navFanFollow(config.leader, config.offset, config.followDist)
+        local c, r = movementActions.navFanFollow(config.leader, config.offset, config.followDist)
         if c then return c, r end
         return false, "Following " .. config.leader
     end,

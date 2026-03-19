@@ -1,10 +1,11 @@
-local mq    = require('mq')
-local utils = require('booty.utils')
-local tgt   = require('booty.bot.actions.target')
-local util  = require('booty.bot.actions.util')
-local spell = require('booty.bot.actions.spell')
+local mq           = require('mq')
+local utils        = require('booty.utils')
+local targetActions = require('booty.bot.bricks.targetActions')
+local targetUtils  = require('booty.bot.bricks.targetUtils')
+local spellActions = require('booty.bot.bricks.spellActions')
+local spellUtils   = require('booty.bot.bricks.spellUtils')
 
-local buff = {}
+local buffActions = {}
 
 -- ============================================================
 -- Pure checks  (does*)
@@ -38,7 +39,7 @@ end
 ---@param buffList BuffEntry[]
 ---@param spellGem integer  Gem slot to use when the spell needs to be memorized
 ---@return boolean, string
-function buff.castBuffList(buffList, spellGem)
+function buffActions.castBuffList(buffList, spellGem)
     if not buffList or #buffList == 0 then return false, 'Buff list is empty' end
     if not spellGem or spellGem <= 0 then return false, 'Invalid spell gem slot' end
 
@@ -58,26 +59,26 @@ function buff.castBuffList(buffList, spellGem)
             utils.fail(string.format("Missing spell from book: %s", spellName))
             -- Skip this spell, try the next
         else
-            local resolvedTargets = util.resolveTargets(targets)
+            local resolvedTargets = targetUtils.resolveTargets(targets)
 
             for _, t in ipairs(resolvedTargets) do
                 if doesTargetNeedBuff(t.spawn, spellName, refreshTime) then
-                    local mc, mr = spell.memorizeSpell(spellGem, spellName)
+                    local mc, mr = spellActions.memorizeSpell(spellGem, spellName)
                     if mc then return mc, mr end
-                    local gem = spell.findGemForSpell(spellName)
+                    local gem = spellUtils.findGemForSpell(spellName)
                     if not gem then goto nexttarget end
                     if not mq.TLO.Me.SpellReady(gem)() then
                         return true, string.format("Waiting for %s to be ready", spellName)
                     end
 
                     -- Target them if not already
-                    local switched, switchReason = tgt.targetSpawn(t.spawn)
+                    local switched, switchReason = targetActions.targetSpawn(t.spawn)
                     if switched then
                         return true, switchReason  -- Let target land next tick
                     end
 
                     -- Check stacking before casting
-                    if not spell.willLand(spellName) then
+                    if not spellUtils.willLand(spellName) then
                         utils.info(string.format("'%s' won't land on %s, skipping", spellName, t.label))
                         goto nexttarget
                     end
@@ -94,4 +95,4 @@ function buff.castBuffList(buffList, spellGem)
     return false, 'All buffs current'
 end
 
-return buff
+return buffActions

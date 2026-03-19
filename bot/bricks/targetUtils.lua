@@ -1,12 +1,33 @@
 local mq = require('mq')
 
-local util = {}
+local targetUtils = {}
+
+local mqSpawn  = mq.TLO.Spawn
+
+-- ============================================================
+-- Pure checks  (get*)
+-- ============================================================
+
+--- Return the spawn that pcName is currently targeting, or nil.
+---@param pcName string
+---@return MQTarget|nil
+function targetUtils.getPCTarget(pcName)
+    local pc = mqSpawn('pc =' .. pcName)
+    if not pc() then return nil end
+    local t = pc.TargetOfTarget
+    if not t() then return nil end
+    return t
+end
+
+-- ============================================================
+-- resolveTargets (merged from util.lua)
+-- ============================================================
 
 --- Resolve target specifiers to a flat list of ResolvedTarget pairs.
 --- Rebuilt fresh each tick — IDs used only for deduplication within this call.
 ---@param targetList TargetSpecifier[]
 ---@return ResolvedTarget[]
-function util.resolveTargets(targetList)
+function targetUtils.resolveTargets(targetList)
     local list = {}
     local seen = {}
 
@@ -38,7 +59,7 @@ function util.resolveTargets(targetList)
             end
 
         else
-            add(mq.TLO.Spawn('pc =' .. t), t)
+            add(mqSpawn('pc =' .. t), t)
         end
     end
 
@@ -46,4 +67,4 @@ function util.resolveTargets(targetList)
     return list
 end
 
-return util
+return targetUtils
