@@ -12,23 +12,24 @@ local lastInviteRequestTime = 0
 
 --- Full invite flow: run to leader, request invite via /dex, accept when it arrives.
 --- Call every tick from INIT state. Returns true, reason on any action taken.
----@param leaderName string
+---@param leaderID integer
 ---@param inviteCooldown number
 ---@param closeDistance number
 ---@return boolean, string
-function groupActions.navGroupInvite(leaderName, inviteCooldown, closeDistance)
+function groupActions.navGroupInvite(leaderID, inviteCooldown, closeDistance)
     -- Accept pending invite
     if groupUtils.hasPendingInvite() then
         mq.cmd('/invite')
         return true, 'Accepting group invite'
     end
 
-    local leader = mq.TLO.Spawn('pc =' .. leaderName)
-    if not leader() then return false, string.format('%s not found in zone', leaderName) end
+    local leader = mq.TLO.Spawn(leaderID)
+    if not leader() then return false, string.format('Leader %d not found in zone', leaderID) end
+    local leaderName = leader.Name() or tostring(leaderID)
 
     -- Navigate toward leader if too far
     if leader.Distance() > closeDistance then
-        local c, r = movementActions.navToPC(leaderName, closeDistance)
+        local c, r = movementActions.navToPC(leaderID, closeDistance)
         if c then return c, r end
     end
 

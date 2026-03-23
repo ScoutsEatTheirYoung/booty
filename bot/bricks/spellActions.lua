@@ -1,5 +1,6 @@
 local mq         = require('mq')
 local spellUtils  = require('booty.bot.bricks.spellUtils')
+local groupUtils  = require('booty.bot.bricks.groupUtils')
 
 local spellActions = {}
 
@@ -28,10 +29,10 @@ end
 ---@return boolean, string
 function spellActions.castSpell(spellName)
     if spellUtils.justFizzled() then
-        return false, 'Backing off after fizzle'
+        return true, 'Backing off after fizzle'
     end
     if mq.TLO.Me.Casting() then
-        return true, 'Casting ' .. spellName
+        return true, 'Casting ' .. mq.TLO.Me.Casting.Name()
     end
     local gem = spellUtils.findGemForSpell(spellName)
     if not gem then
@@ -56,6 +57,9 @@ function spellActions.castSpellInGem(spellName, gemNum)
     if not mq.TLO.Me.Book(spellName)() then
         return false, string.format("'%s' not in spellbook", spellName)
     end
+    if not spellUtils.hasManaForSpell(spellName) then
+        return false, string.format("Not enough mana for '%s'", spellName)
+    end
     local c, r = spellActions.memorizeSpell(gemNum, spellName)
     if c then return c, r end
     local gem = spellUtils.findGemForSpell(spellName)
@@ -64,6 +68,21 @@ function spellActions.castSpellInGem(spellName, gemNum)
         return true, string.format('Waiting for %s to be ready', spellName)
     end
     return spellActions.castSpell(spellName)
+end
+
+--- While casting, consume the tick unless an emergency warrants interruption.
+--- emergencyPct: if any group member HP drops below this, allow the cast to be
+--- interrupted (returns false) so heal logic can run. Pass nil to never allow
+--- interruption (e.g. classes with no emergency heal, like mage).
+---@param emergencyPct number|nil
+---@return boolean, string
+function spellActions.guardCasting(emergencyPct)
+    if not mq.TLO.Me.Casting() then return false, '' end
+    local castName = mq.TLO.Me.Casting.Name() or 'spell'
+    if emergencyPct == nil or groupUtils.minGroupHp() > emergencyPct then
+        return true, string.format('Casting %s', castName)
+    end
+    return false, ''
 end
 
 --- Summon a pet. Mems the spell into gemNum if needed.

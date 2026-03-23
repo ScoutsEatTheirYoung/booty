@@ -8,11 +8,11 @@ local mqSpawn  = mq.TLO.Spawn
 -- Pure checks  (get*)
 -- ============================================================
 
---- Return the spawn that pcName is currently targeting, or nil.
----@param pcName string
+--- Return the spawn that the given PC is currently targeting, or nil.
+---@param spawnID integer
 ---@return MQTarget|nil
-function targetUtils.getPCTarget(pcName)
-    local pc = mqSpawn('pc =' .. pcName)
+function targetUtils.getPCTarget(spawnID)
+    local pc = mqSpawn(spawnID)
     if not pc() then return nil end
     local t = pc.TargetOfTarget
     if not t() then return nil end

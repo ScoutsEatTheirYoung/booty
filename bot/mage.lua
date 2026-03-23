@@ -1,30 +1,33 @@
-local mq            = require('mq')
-local fsm           = require('booty.bot.fsm')
+local mq              = require('mq')
+local fsm             = require('booty.bot.fsm')
 local movementActions = require('booty.bot.bricks.movementActions')
-local combatActions = require('booty.bot.bricks.combatActions')
-local combatUtils   = require('booty.bot.bricks.combatUtils')
-local buffActions   = require('booty.bot.bricks.buffActions')
-local spellActions  = require('booty.bot.bricks.spellActions')
-local groupUtils    = require('booty.bot.bricks.groupUtils')
+local combatActions   = require('booty.bot.bricks.combatActions')
+local combatUtils     = require('booty.bot.bricks.combatUtils')
+local idleActions     = require('booty.bot.bricks.idleActions')
+local spellActions    = require('booty.bot.bricks.spellActions')
+local groupUtils      = require('booty.bot.bricks.groupUtils')
 
 -- ============================================================
 -- Mage config
 -- Fill in spell names for your level / server.
 -- ============================================================
-local PET_SPELL   = "Minor Summoning: Water"
+local PET_SPELL   = "Minor Conjuration: Water"
 local PET_REAGENT = "Malachite"
 local PET_GEM     = 2
 
 local BUFFS = {
-    { spellName = "Lesser Shielding", refreshTime = 600, targets = { "self" } },
-    { spellName = "Burnout", refreshTime = 600, targets = { "pet" } },
-    { spellName = "Shield of Fire", refreshTime = 60, targets = { "group", "pet", "self" } },
+    { spellName = "Major Shielding", refreshTime = 600, targets = { "self" } },
+    { spellName = "Burnout II",      refreshTime = 600, targets = { "pet" } },
+    { spellName = "Inferno Shield",  refreshTime = 60,  targets = { "group", "pet", "self" } },
 }
+local BUFF_GEM = 8
 
-local NUKE_NAME = "Shock of Flame"  -- e.g. "Shock of Spikes"
-local NUKE_GEM  = 1   -- gem slot to hold the nuke
+local NUKE_NAME = "Blaze"
+local NUKE_GEM  = 1
 
-local CAST_RANGE = 50
+local CAST_RANGE  = 50
+local LOS_RANGE   = 25
+local PULL_RADIUS = 40  -- engage from camp when mob is within this distance
 
 return function(cfg)
     local LEADERNAME  = cfg.leader
@@ -32,22 +35,15 @@ return function(cfg)
     local FOLLOW_DIST = cfg.followDist
 
     ---@type Point|nil
-    local campPoint = nil
+    local campPoint   = nil
     local CAMP_RADIUS = 15
 
     local timeLastNonIdleAction = os.clock()
-    local IDLE_THRESHOLD        = 5  -- seconds before sitting to med
+    local IDLE_THRESHOLD        = 5
 
-    ---@return boolean, string
-    local function doIdleTasks()
-        local pctMana = mq.TLO.Me.PctMana() or 100
-        if not mq.TLO.Me.Sitting() and pctMana < 100 then
-            mq.cmd('/sit')
-            return true, 'Sitting to med'
-        end
-        local c, r = buffActions.castBuffList(BUFFS, 8)
-        if c then return c, r end
-        return false, string.format('Medding (%d%% mana)', pctMana)
+    local function leaderID()
+        local s = mq.TLO.Spawn('pc =' .. LEADERNAME)
+        return (s and s() and s.ID()) or 0
     end
 
     -- ============================================================
@@ -67,7 +63,7 @@ return function(cfg)
                 return false, r or "Waiting to summon pet"
             end
 
-            c, r = buffActions.castBuffList(BUFFS, 8)
+            c, r = idleActions.medAndBuff(BUFFS, BUFF_GEM)
             if c then return c, r end
 
             fsm.changeState("FOLLOW")
@@ -83,7 +79,7 @@ return function(cfg)
         execute = function()
             local c, r
 
-            c, r = combatActions.assistPC(LEADERNAME, false, true)
+            c, r = combatActions.assistPC(leaderID(), false, true)
             if c then return c, r end
 
             if combatUtils.hasLiveTarget() then
@@ -95,7 +91,7 @@ return function(cfg)
             end
 
             combatActions.disengage()
-            c, r = movementActions.navFanFollow(LEADERNAME, myOffset, FOLLOW_DIST)
+            c, r = movementActions.navFanFollow(leaderID(), myOffset, FOLLOW_DIST)
             if c then return c, r end
             return false, "Holding position near leader"
         end,
@@ -117,22 +113,33 @@ return function(cfg)
         execute = function()
             local c, r
 
-            c, r = combatActions.assistPC(LEADERNAME, false, true)
+            -- Guard: never interrupt casts (mage has no emergency heal)
+            c, r = spellActions.guardCasting(nil)
+            if c then return c, r end
+
+            -- Priority 1: assist leader
+            c, r = combatActions.assistPC(leaderID(), false, true)
             if c then timeLastNonIdleAction = os.clock(); return c, r end
 
             if combatUtils.hasLiveTarget() then
+                c, r = movementActions.navForLoS(LOS_RANGE)
+                if c then timeLastNonIdleAction = os.clock(); return c, r end
+
+                -- Priority 2: nuke
                 c, r = spellActions.castSpellInGem(NUKE_NAME, NUKE_GEM)
                 if c then timeLastNonIdleAction = os.clock(); return c, r end
+
+                return false, "In combat — holding position"
             else
                 combatActions.disengage()
             end
 
-            c, r = movementActions.navFanFollow(LEADERNAME, myOffset, FOLLOW_DIST)
+            c, r = movementActions.navFanFollow(leaderID(), myOffset, FOLLOW_DIST)
             if c then timeLastNonIdleAction = os.clock(); return c, r end
 
             if (os.clock() - timeLastNonIdleAction) >= IDLE_THRESHOLD
                     and not groupUtils.isGroupEngaged() then
-                c, r = doIdleTasks()
+                c, r = idleActions.medAndBuff(BUFFS, BUFF_GEM)
                 if c then return c, r end
             end
 
@@ -147,10 +154,13 @@ return function(cfg)
 
     -- ============================================================
     -- State: MAKECAMPANDEXP
-    -- Snap camp at leader's position, hold it, assist when leader pulls.
+    -- Snap camp, idle (med/buff) until combat reaches camp.
+    -- Engages when: non-leader is pulled to camp, OR leader pulls within PULL_RADIUS.
     -- ============================================================
     fsm.states["MAKECAMPANDEXP"] = {
         onEnter = function()
+            mq.cmd('/attack off')
+            mq.cmd('/squelch /pet back off')
             local alpha = mq.TLO.Spawn('pc =' .. LEADERNAME)
             if alpha() then
                 campPoint = { y = alpha.Y(), x = alpha.X() }
@@ -159,19 +169,39 @@ return function(cfg)
         execute = function()
             local c, r
 
-            c, r = combatActions.assistPC(LEADERNAME, false, true)
+            -- Guard: never interrupt casts (mage has no emergency heal)
+            c, r = spellActions.guardCasting(nil)
             if c then return c, r end
 
-            if not combatUtils.hasLiveTarget() then combatActions.disengage() end
+            if groupUtils.isCampEngaged(leaderID(), campPoint, PULL_RADIUS) then
+                c, r = combatActions.assistPC(leaderID(), false, true)
+                if c then return c, r end
+
+                if combatUtils.hasLiveTarget() then
+                    c, r = movementActions.navForLoS(LOS_RANGE)
+                    if c then return c, r end
+
+                    c, r = spellActions.castSpellInGem(NUKE_NAME, NUKE_GEM)
+                    if c then return c, r end
+
+                    return false, "Defending camp"
+                else
+                    combatActions.disengage()
+                end
+            end
 
             if campPoint then
                 c, r = movementActions.navToPoint(campPoint, CAMP_RADIUS)
                 if c then return c, r end
             end
 
+            c, r = idleActions.medAndBuff(BUFFS, BUFF_GEM)
+            if c then return c, r end
+
             return false, "Holding camp"
         end,
         onExit = function()
+            mq.cmd('/stand')
             combatActions.disengage()
             mq.cmd('/squelch /nav stop')
         end,
@@ -182,7 +212,7 @@ return function(cfg)
     -- ============================================================
     fsm.states["BUFFTEST"] = {
         execute = function()
-            local c, r = doIdleTasks()
+            local c, r = idleActions.medAndBuff(BUFFS, BUFF_GEM)
             if c then return c, r end
             return false, "All buffs current"
         end,

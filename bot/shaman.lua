@@ -1,36 +1,41 @@
-local mq            = require('mq')
-local fsm           = require('booty.bot.fsm')
+local mq              = require('mq')
+local fsm             = require('booty.bot.fsm')
 local movementActions = require('booty.bot.bricks.movementActions')
-local combatActions = require('booty.bot.bricks.combatActions')
-local combatUtils   = require('booty.bot.bricks.combatUtils')
-local buffActions   = require('booty.bot.bricks.buffActions')
-local spellActions  = require('booty.bot.bricks.spellActions')
-local spellUtils    = require('booty.bot.bricks.spellUtils')
-local targetActions = require('booty.bot.bricks.targetActions')
-local groupUtils    = require('booty.bot.bricks.groupUtils')
+local combatActions   = require('booty.bot.bricks.combatActions')
+local combatUtils     = require('booty.bot.bricks.combatUtils')
+local healActions     = require('booty.bot.bricks.healActions')
+local idleActions     = require('booty.bot.bricks.idleActions')
+local spellActions    = require('booty.bot.bricks.spellActions')
+local groupUtils      = require('booty.bot.bricks.groupUtils')
 
 -- ============================================================
 -- Shaman config
 -- Fill in spell names for your level / server.
 -- ============================================================
 local BUFFS = {
-    { spellName = "Inner Fire",  refreshTime = 600, targets = { "self", "group" } },
-    { spellName = "Strengthen",  refreshTime = 600, targets = { "self", "group" } },
-    { spellName = "Dexterous Aura",  refreshTime = 600, targets = { "self", "group" } },
-    { spellName = "Feet like Cat",  refreshTime = 600, targets = { "self", "group" } },
-    { spellName = "Spirit of Bear",  refreshTime = 600, targets = { "self", "group" } },
+    { spellName = "Inner Fire",       refreshTime = 600, targets = { "self", "group" } },
+    { spellName = "Raging Strength",  refreshTime = 600, targets = { "self", "group" } },
+    { spellName = "Rising Dexterity", refreshTime = 600, targets = { "self", "group" } },
+    { spellName = "Nimble",           refreshTime = 600, targets = { "self", "group" } },
+    { spellName = "Health",           refreshTime = 600, targets = { "self", "group" } },
+    { spellName = "Shifting Shield",  refreshTime = 600, targets = { "self", "group" } },
+    { spellName = "Regeneration",     refreshTime = 60,  targets = { "self", "group" } },
+    { spellName = "Quickness",        refreshTime = 60,  targets = { "self", "group" } },
+    { spellName = "Talisman of Tnarg", refreshTime = 600, targets = { "self", "group" } },
 }
+local BUFF_GEM = 8
 
-local HEAL_NAME          = "Light Healing"   -- e.g. "Minor Healing"
-local HEAL_GEM           = 2    -- gem slot to hold the heal
-local HEAL_PCT           = 80   -- heal when HP drops below this % (out of combat)
-local HEAL_EMERGENCY_PCT = 60   -- heal when HP drops below this % (in combat)
+local HEAL_NAME          = "Greater Healing"
+local HEAL_GEM           = 2
+local HEAL_PCT           = 80
+local HEAL_EMERGENCY_PCT = 60
 
-local NUKE_NAME = "Frost Rift"   -- e.g. "Frost Rift"
-local NUKE_GEM  = 3    -- gem slot to hold the nuke
-local NUKE_MANA = 80   -- only nuke when above this % mana
+local NUKE_NAME = "Winter's Roar"
+local NUKE_GEM  = 3
 
-local CAST_RANGE = 50
+local CAST_RANGE  = 50
+local LOS_RANGE   = 25
+local PULL_RADIUS = 40  -- engage from camp when mob is within this distance
 
 return function(cfg)
     local LEADER      = cfg.leader
@@ -38,66 +43,15 @@ return function(cfg)
     local FOLLOW_DIST = cfg.followDist
 
     ---@type Point|nil
-    local campPoint = nil
+    local campPoint   = nil
     local CAMP_RADIUS = 15
 
     local timeLastNonIdleAction = os.clock()
-    local IDLE_THRESHOLD        = 5  -- seconds before sitting to med
+    local IDLE_THRESHOLD        = 5
 
-    --- Check leader first, then group members, heal the first one below HEAL_PCT.
-    --- Targets them if needed (one step), then casts.
-    ---@return boolean, string
-    local function doHealCheck()
-        if not HEAL_NAME or HEAL_NAME == "" then return false, "No heal configured" end
-
-        -- Always keep heal memmed — if not on bar, mem it now before anything else
-        if not spellUtils.isOnBar(HEAL_NAME) then
-            return spellActions.memorizeSpell(HEAL_GEM, HEAL_NAME)
-        end
-
-        local threshold = groupUtils.isGroupEngaged() and HEAL_EMERGENCY_PCT or HEAL_PCT
-
-        local function tryHeal(spawn, name)
-            if not spawn or not spawn() then return false, "" end
-            if (spawn.PctHPs() or 100) >= threshold then return false, "" end
-            local c = targetActions.targetSpawn(spawn)
-            if c then return true, string.format("Targeting %s to heal", name) end
-            c = spellActions.castSpellInGem(HEAL_NAME, HEAL_GEM)
-            if c then return true, string.format("Healing %s (%d%%)", name, spawn.PctHPs() or 0) end
-            return false, ""
-        end
-
-        -- Leader first
-        local c, r = tryHeal(mq.TLO.Spawn('pc =' .. LEADER), LEADER)
-        if c then return c, r end
-
-        -- Then group members
-        local count = mq.TLO.Group.Members() or 0
-        for i = 1, count do
-            local m = mq.TLO.Group.Member(i)
-            if m and m.Name() and m.Name() ~= mq.TLO.Me.Name() then
-                c, r = tryHeal(m.Spawn, m.Name())
-                if c then return c, r end
-            end
-        end
-
-        -- Self last
-        c, r = tryHeal(mq.TLO.Me, mq.TLO.Me.Name() or 'self')
-        if c then return c, r end
-
-        return false, "No heal needed"
-    end
-
-    ---@return boolean, string
-    local function doIdleTasks()
-        local pctMana = mq.TLO.Me.PctMana() or 100
-        if not mq.TLO.Me.Sitting() and pctMana < 100 then
-            mq.cmd('/sit')
-            return true, 'Sitting to med'
-        end
-        local c, r = buffActions.castBuffList(BUFFS, 8)
-        if c then return c, r end
-        return false, string.format('Medding (%d%% mana)', pctMana)
+    local function leaderID()
+        local s = mq.TLO.Spawn('pc =' .. LEADER)
+        return (s and s() and s.ID()) or 0
     end
 
     -- ============================================================
@@ -109,11 +63,8 @@ return function(cfg)
             mq.cmd('/attack off')
         end,
         execute = function()
-            local c, r
-
-            c, r = buffActions.castBuffList(BUFFS, 8)
+            local c, r = idleActions.medAndBuff(BUFFS, BUFF_GEM)
             if c then return c, r end
-
             fsm.changeState("FOLLOW")
             return false, "Setup complete"
         end,
@@ -122,20 +73,17 @@ return function(cfg)
     -- ============================================================
     -- State: MELEE
     -- Assist leader, approach target, cast when opportunities arise.
-    -- Heal between pulls.
     -- ============================================================
     fsm.states["MELEE"] = {
         execute = function()
             local c, r
 
-            c, r = combatActions.assistPC(LEADER, false, false)
+            c, r = combatActions.assistPC(leaderID(), false, false)
             if c then return c, r end
 
             if combatUtils.hasLiveTarget() then
                 c, r = movementActions.navToTarget(CAST_RANGE)
                 if c then return c, r end
-                -- TODO: c, r = spellActions.castSpell("slow"); if c then return c, r end
-                -- TODO: c, r = spellActions.castSpell("DoT");  if c then return c, r end
                 return false, "In combat — waiting for spell opportunities"
             end
 
@@ -143,13 +91,12 @@ return function(cfg)
             for i = 1, count do
                 local m = mq.TLO.Group.Member(i)
                 if m and m.Name() and (m.PctHPs() or 100) < HEAL_PCT then
-                    -- TODO: c, r = spellActions.castHeal(...); if c then return c, r end
                     return false, string.format("Waiting to heal %s (%d%%)", m.Name(), m.PctHPs())
                 end
             end
 
             combatActions.disengage()
-            c, r = movementActions.navFanFollow(LEADER, myOffset, FOLLOW_DIST)
+            c, r = movementActions.navFanFollow(leaderID(), myOffset, FOLLOW_DIST)
             if c then return c, r end
             return false, "Holding position near leader"
         end,
@@ -161,7 +108,7 @@ return function(cfg)
     -- ============================================================
     -- State: FOLLOWANDEXP
     -- Follow leader, assist on everything leader engages.
-    -- Med and buff when idle.
+    -- Heal/cure between and during fights. Med and buff when idle.
     -- ============================================================
     fsm.states["FOLLOWANDEXP"] = {
         onEnter = function()
@@ -171,28 +118,41 @@ return function(cfg)
         execute = function()
             local c, r
 
-            c, r = doHealCheck()
+            -- Guard: keep casting unless someone needs an emergency heal
+            c, r = spellActions.guardCasting(HEAL_EMERGENCY_PCT)
+            if c then return c, r end
+
+            -- Priority 1: heal
+            c, r = healActions.healGroup(HEAL_NAME, HEAL_GEM, HEAL_PCT, HEAL_EMERGENCY_PCT, leaderID())
             if c then timeLastNonIdleAction = os.clock(); return c, r end
 
-            c, r = combatActions.assistPC(LEADER, false, false)
+            -- Priority 2: cure disease / poison (full group + pets)
+            -- c, r = buffActions.cureGroupDebuffs(CURE_DISEASE, CURE_POISON, CURE_GEM)
+            -- if c then timeLastNonIdleAction = os.clock(); return c, r end
+
+            -- Priority 3: assist leader
+            c, r = combatActions.assistPC(leaderID(), false, false)
             if c then timeLastNonIdleAction = os.clock(); return c, r end
 
             if combatUtils.hasLiveTarget() then
-                local pctMana = mq.TLO.Me.PctMana() or 0
-                if pctMana >= NUKE_MANA then
-                    c, r = spellActions.castSpellInGem(NUKE_NAME, NUKE_GEM)
-                    if c then timeLastNonIdleAction = os.clock(); return c, r end
-                end
+                c, r = movementActions.navForLoS(LOS_RANGE)
+                if c then timeLastNonIdleAction = os.clock(); return c, r end
+
+                -- Priority 4: nuke
+                c, r = spellActions.castSpellInGem(NUKE_NAME, NUKE_GEM)
+                if c then timeLastNonIdleAction = os.clock(); return c, r end
+
+                return false, "In combat — holding position"
             else
                 combatActions.disengage()
             end
 
-            c, r = movementActions.navFanFollow(LEADER, myOffset, FOLLOW_DIST)
+            c, r = movementActions.navFanFollow(leaderID(), myOffset, FOLLOW_DIST)
             if c then timeLastNonIdleAction = os.clock(); return c, r end
 
             if (os.clock() - timeLastNonIdleAction) >= IDLE_THRESHOLD
                     and not groupUtils.isGroupEngaged() then
-                c, r = doIdleTasks()
+                c, r = idleActions.medAndBuff(BUFFS, BUFF_GEM)
                 if c then return c, r end
             end
 
@@ -207,7 +167,8 @@ return function(cfg)
 
     -- ============================================================
     -- State: MAKECAMPANDEXP
-    -- Snap camp at leader's position, hold it, assist when leader pulls.
+    -- Snap camp, idle (med/buff) until combat reaches camp.
+    -- Engages when: non-leader is pulled to camp, OR leader pulls within PULL_RADIUS.
     -- ============================================================
     fsm.states["MAKECAMPANDEXP"] = {
         onEnter = function()
@@ -220,19 +181,46 @@ return function(cfg)
         execute = function()
             local c, r
 
-            c, r = combatActions.assistPC(LEADER, false, false)
+            -- Guard: keep casting unless someone needs an emergency heal
+            c, r = spellActions.guardCasting(HEAL_EMERGENCY_PCT)
             if c then return c, r end
 
-            if not combatUtils.hasLiveTarget() then combatActions.disengage() end
+            -- Heals and cures always run regardless of combat state
+            c, r = healActions.healGroup(HEAL_NAME, HEAL_GEM, HEAL_PCT, HEAL_EMERGENCY_PCT, leaderID())
+            if c then return c, r end
+
+            -- c, r = buffActions.cureGroupDebuffs(CURE_DISEASE, CURE_POISON, CURE_GEM)
+            -- if c then return c, r end
+
+            if groupUtils.isCampEngaged(leaderID(), campPoint, PULL_RADIUS) then
+                c, r = combatActions.assistPC(leaderID(), false, false)
+                if c then return c, r end
+
+                if combatUtils.hasLiveTarget() then
+                    c, r = movementActions.navForLoS(LOS_RANGE)
+                    if c then return c, r end
+
+                    c, r = spellActions.castSpellInGem(NUKE_NAME, NUKE_GEM)
+                    if c then return c, r end
+
+                    return false, "Defending camp"
+                else
+                    combatActions.disengage()
+                end
+            end
 
             if campPoint then
                 c, r = movementActions.navToPoint(campPoint, CAMP_RADIUS)
                 if c then return c, r end
             end
 
+            c, r = idleActions.medAndBuff(BUFFS, BUFF_GEM)
+            if c then return c, r end
+
             return false, "Holding camp"
         end,
         onExit = function()
+            mq.cmd('/stand')
             mq.cmd('/squelch /nav stop')
             mq.cmd('/attack off')
         end,
@@ -243,9 +231,10 @@ return function(cfg)
     -- ============================================================
     fsm.states["BUFFTEST"] = {
         execute = function()
-            local c, r = doIdleTasks()
+            local c, r = idleActions.medAndBuff(BUFFS, BUFF_GEM)
             if c then return c, r end
             return false, "All buffs current"
         end,
     }
+
 end

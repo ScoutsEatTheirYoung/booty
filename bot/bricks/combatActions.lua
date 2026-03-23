@@ -64,16 +64,16 @@ function combatActions.engageTarget(target, useMelee, usePet)
     return false, 'Already engaged'
 end
 
---- Find and engage the best available target for a named PC.
+--- Find and engage the best available target for a PC by spawn ID.
 --- Priority: PC's live NPC target → first XTarget NPC → nothing.
 --- Stands up first if sitting. One step per tick.
----@param pcName string
+---@param spawnID integer
 ---@param useMelee boolean
 ---@param usePet boolean
 ---@return boolean, string
-function combatActions.assistPC(pcName, useMelee, usePet)
+function combatActions.assistPC(spawnID, useMelee, usePet)
     ---@type MQTarget|MQSpawn|nil
-    local t = targetUtils.getPCTarget(pcName)
+    local t = targetUtils.getPCTarget(spawnID)
     if t and (t.Type() ~= "NPC" or (t.PctHPs() or 0) <= 0) then t = nil end
     if not t then t = groupUtils.getEngagedTarget() end
     if not t then return false, 'No target to assist' end

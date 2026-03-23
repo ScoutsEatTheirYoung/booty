@@ -58,9 +58,11 @@ booty/
 │       ├── movementUtils.lua    distanceTo, standIfNeeded
 │       ├── spellActions.lua     memorizeSpell, castSpell, castSpellInGem, castSummonPet
 │       ├── spellUtils.lua       findGemForSpell, isSpellMemmed, isOnBar, isSpellReady, willLand, hasManaForSpell
-│       ├── buffActions.lua      castBuffList(BUFFS, gemSlot) — cast/rebuff cycle
+│       ├── buffActions.lua      castBuffList(BUFFS, gemSlot), cureGroup
+│       ├── healActions.lua      healGroup(healName, healGem, healPct, emergencyPct, leader)
+│       ├── idleActions.lua      medAndBuff(buffList, gemSlot) — sit/med + cast buff list
 │       ├── groupActions.lua     navGroupInvite, resetInviteTimer
-│       ├── groupUtils.lua       isGroupEngaged, isPCEngaged, getEngagedTarget, isGrouped, hasPendingInvite
+│       ├── groupUtils.lua       isGroupEngaged, isPCEngaged, getEngagedTarget, isGrouped, hasPendingInvite, minGroupHp
 │       ├── altabilityActions.lua  castAA(aaName)
 │       └── altabilityUtils.lua    hasAA, isAAReady
 └── search/item/init.lua  ImGui inventory browser with item icons
@@ -167,6 +169,10 @@ groupUtils.isPCEngaged(pcName)      -- spawn PlayerState & 12 (bits 4+8 = Aggres
 groupUtils.getEngagedTarget()       -- first live NPC from XTarget list, or nil
 groupUtils.isGrouped()
 groupUtils.hasPendingInvite()       -- Me.Invited()
+groupUtils.minGroupHp()             -- lowest PctHPs across all group members
+groupUtils.isEngagementNearPoint(campPoint, radius)  -- any engaged NPC within radius of a world point
+groupUtils.isCampEngaged(leaderName, campPoint, pullRadius)
+-- true when non-leader is engaged (mob at camp) OR leader engaged and mob within pullRadius of camp
 ```
 
 ### groupActions.lua
@@ -187,10 +193,13 @@ spellUtils.hasManaForSpell(spellName)   -- boolean
 
 ### spellActions.lua
 ```lua
-spellActions.memorizeSpell(gemNum, spellName)        -- /memspell if not already on bar
-spellActions.castSpell(spellName)                    -- mana+gem+ready checks, then /cast
-spellActions.castSpellInGem(spellName, gemNum)       -- mem into gem if needed, then cast
+spellActions.memorizeSpell(gemNum, spellName)
+spellActions.castSpell(spellName)
+spellActions.castSpellInGem(spellName, gemNum, minManaPct)  -- minManaPct optional: skip if below this % mana
 spellActions.castSummonPet(spellName, gemNum, reagent)
+spellActions.guardCasting(emergencyPct)
+-- emergencyPct: allow cast interrupt if group member below this % HP
+-- pass nil to never allow interrupt (mage, etc.)
 ```
 
 ### buffActions.lua
@@ -200,9 +209,29 @@ local BUFFS = {
     { spellName = "Inner Fire", refreshTime = 600, targets = { "self", "group" } },
 }
 buffActions.castBuffList(BUFFS, gemSlot)   -- iterates targets, checks willLand, casts if needed
+buffActions.cureGroup(spellName, gemSlot, debuffCheck)  -- cure first group member that passes debuffCheck(spawn)
+buffActions.cureGroupDebuffs(diseaseSpell, poisonSpell, cureGem)
+-- two-pass scan: disease across whole group first, then poison
+-- uses Me.Diseased()/Poisoned() and Group.Member(i).Diseased()/Poisoned() — no targeting needed
+-- NOTE: pets require targeting to read buff data and are NOT included
 ```
 
 `willLand` returns `false` when buff is already active (not expired) — correct, skip casting.
+
+### healActions.lua
+```lua
+healActions.healGroup(healName, healGem, healPct, emergencyPct, leader)
+-- Heals leader first, then group members, then self.
+-- Uses emergencyPct threshold when group is engaged, healPct otherwise.
+-- Skips targeting/consuming tick if spell is on cooldown.
+```
+
+### idleActions.lua
+```lua
+idleActions.medAndBuff(buffList, gemSlot)
+-- Sits to med if mana < 100%, then casts any buffs from buffList that need refreshing.
+-- Used in idle blocks and SETUP/BUFFTEST states.
+```
 
 ### movementUtils.lua (pure checks)
 ```lua
@@ -214,10 +243,12 @@ movementUtils.standIfNeeded()       -- /stand if sitting, returns c, r
 ```lua
 movementActions.navFanFollow(leader, offset, dist)  -- fan formation follow (non-blocking)
 movementActions.navToTarget(range)                  -- approach current target (non-blocking)
+movementActions.navForLoS(losRange)                 -- face target, nav until LoS clear (blocking), stopNav when LoS gained
 movementActions.navToPC(name, dist)
 movementActions.navToPoint(point, radius)           -- navigate to {x, y} (blocking)
 movementActions.navToSpawn(spawn, range)            -- navigate to spawn (blocking)
 movementActions.navToGuildhallPort()                -- navigate to guild lobby portal (blocking)
+movementActions.stopNav()                           -- /nav stop + clear owner
 ```
 
 ### altabilityUtils.lua (pure checks)
@@ -228,7 +259,7 @@ altabilityUtils.isAAReady(aaName)  -- boolean: AA exists and is off cooldown
 
 ### altabilityActions.lua
 ```lua
-altabilityActions.castAA(aaName)   -- /alt activate if owned and ready
+altabilityActions.castAA(aaName)   -- /alt activate if owned and ready; returns false (no tick) if on cooldown
 ```
 
 ## Class Bot Config Pattern

@@ -9,11 +9,11 @@ local travel        = require('booty.bot.travel')
 -- Shared config — class modules receive this table
 -- ============================================================
 local LEADER      = "Alpha"
-local FOLLOW_DIST = 15
+local FOLLOW_DIST = 10
 
 local OFFSETS = {
-    Beta  = { x =  8, y =  8 },
-    Gamma = { x = -8, y = -8 },
+    Beta  = { x =  4, y =  4 },
+    Gamma = { x = -4, y = -4 },
 }
 
 local config = {
@@ -21,6 +21,11 @@ local config = {
     offset     = OFFSETS[mq.TLO.Me.Name()] or { x = 0, y = 0 },
     followDist = FOLLOW_DIST,
 }
+
+local function leaderID()
+    local s = mq.TLO.Spawn('pc =' .. LEADER)
+    return (s and s() and s.ID()) or 0
+end
 
 -- ============================================================
 -- State: IDLE (shared)
@@ -55,7 +60,7 @@ fsm.states["INIT"] = {
             fsm.changeState("FOLLOW")
             return
         end
-        local c, r = groupActions.navGroupInvite(LEADER, INVITE_COOLDOWN, INIT_CLOSE_DIST)
+        local c, r = groupActions.navGroupInvite(leaderID(), INVITE_COOLDOWN, INIT_CLOSE_DIST)
         if c then return c, r end
         return false, "Waiting for group invite"
     end,
@@ -108,7 +113,7 @@ fsm.states["FOLLOW"] = {
         mq.cmd('/squelch /pet back off')
     end,
     execute = function()
-        local c, r = movementActions.navFanFollow(config.leader, config.offset, config.followDist)
+        local c, r = movementActions.navFanFollow(leaderID(), config.offset, config.followDist)
         if c then return c, r end
         return false, "Following " .. config.leader
     end,

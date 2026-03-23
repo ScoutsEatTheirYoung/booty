@@ -32,12 +32,12 @@ function targetActions.targetByID(id)
     return true, string.format('Targeting spawn ID %d', id)
 end
 
---- Target what pcName is targeting. Uses TargetOfTarget — no /assist command.
----@param pcName string
+--- Target what the given PC is targeting. Uses TargetOfTarget — no /assist command.
+---@param spawnID integer
 ---@return boolean, string
-function targetActions.targetPCTarget(pcName)
-    local t = targetUtils.getPCTarget(pcName)
-    if not t then return false, string.format('%s has no target', pcName) end
+function targetActions.targetPCTarget(spawnID)
+    local t = targetUtils.getPCTarget(spawnID)
+    if not t then return false, string.format('Spawn %d has no target', spawnID) end
     return targetActions.targetSpawn(t)
 end
 

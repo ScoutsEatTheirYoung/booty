@@ -42,7 +42,7 @@ function travel.ascendantGuildHallPort(porterName, location)
         porterName = 'Liminal'
     end
 
-    if not mq.TLO.Zone.ShortName() == 'guildhall' then
+    if mq.TLO.Zone.ShortName() ~= 'guildlobby' then
         local c, r = altabilityActions.castAA('Marked Passage')
         if c then portPhase = PORT_PHASE.TOGUILDHALL end
         return c, r
@@ -58,9 +58,6 @@ function travel.ascendantGuildHallPort(porterName, location)
 
     -- Only say if we haven't already — prevents repeat /say while waiting for zone-out
     -- Liminal uses an unknown hash string, so we can't automate the /say yet
-    if porterName:lower() == 'liminal' then
-        return false, "Liminal not supported yet, manual intervention required"
-    end
     if portPhase == PORT_PHASE.NONE then
         local sayString = ""
         if porterName:lower() == "liminal" then 

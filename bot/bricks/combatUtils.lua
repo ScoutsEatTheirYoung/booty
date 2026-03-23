@@ -25,4 +25,12 @@ function combatUtils.hasPet()
     return (mq.TLO.Me.Pet.ID() or 0) > 0
 end
 
+--- True if the current target is in line of sight.
+---@return boolean
+function combatUtils.hasLineOfSight()
+    local t = mq.TLO.Target
+    if not t() then return false end
+    return t.LineOfSight()
+end
+
 return combatUtils
