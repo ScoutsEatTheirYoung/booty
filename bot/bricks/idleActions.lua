@@ -9,13 +9,13 @@ local idleActions = {}
 ---@param gemSlot integer
 ---@return boolean, string
 function idleActions.medAndBuff(buffList, gemSlot)
+    local c, r = buffActions.castBuffList(buffList, gemSlot)
+    if c then return c, r end
     local pctMana = mq.TLO.Me.PctMana() or 100
     if not mq.TLO.Me.Sitting() and pctMana < 100 then
         mq.cmd('/sit')
         return true, 'Sitting to med'
     end
-    local c, r = buffActions.castBuffList(buffList, gemSlot)
-    if c then return c, r end
     return false, string.format('Medding (%d%% mana)', pctMana)
 end
 

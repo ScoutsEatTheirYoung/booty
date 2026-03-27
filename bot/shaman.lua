@@ -55,17 +55,20 @@ return function(cfg)
     end
 
     -- ============================================================
-    -- State: SETUP
-    -- Cast initial buffs, then transition to FOLLOW.
+    -- State: STARTUP
+    -- Cast initial buffs, then transition to ESCORT.
     -- ============================================================
-    fsm.states["SETUP"] = {
+    fsm.states["STARTUP"] = {
         onEnter = function()
             mq.cmd('/attack off')
         end,
         execute = function()
-            local c, r = idleActions.medAndBuff(BUFFS, BUFF_GEM)
+            local c, r
+            c, r = spellActions.guardCasting(nil)
             if c then return c, r end
-            fsm.changeState("FOLLOW")
+            c, r = idleActions.medAndBuff(BUFFS, BUFF_GEM)
+            if c then return c, r end
+            fsm.changeState("ESCORT")
             return false, "Setup complete"
         end,
     }
@@ -106,11 +109,11 @@ return function(cfg)
     }
 
     -- ============================================================
-    -- State: FOLLOWANDEXP
+    -- State: ASSIST
     -- Follow leader, assist on everything leader engages.
     -- Heal/cure between and during fights. Med and buff when idle.
     -- ============================================================
-    fsm.states["FOLLOWANDEXP"] = {
+    fsm.states["ASSIST"] = {
         onEnter = function()
             mq.cmd('/attack off')
             timeLastNonIdleAction = os.clock()
@@ -166,11 +169,11 @@ return function(cfg)
     }
 
     -- ============================================================
-    -- State: MAKECAMPANDEXP
+    -- State: CAMP
     -- Snap camp, idle (med/buff) until combat reaches camp.
     -- Engages when: non-leader is pulled to camp, OR leader pulls within PULL_RADIUS.
     -- ============================================================
-    fsm.states["MAKECAMPANDEXP"] = {
+    fsm.states["CAMP"] = {
         onEnter = function()
             mq.cmd('/attack off')
             local alpha = mq.TLO.Spawn('pc =' .. LEADER)
@@ -231,7 +234,10 @@ return function(cfg)
     -- ============================================================
     fsm.states["BUFFTEST"] = {
         execute = function()
-            local c, r = idleActions.medAndBuff(BUFFS, BUFF_GEM)
+            local c, r
+            c, r = spellActions.guardCasting(nil)
+            if c then return c, r end
+            c, r = idleActions.medAndBuff(BUFFS, BUFF_GEM)
             if c then return c, r end
             return false, "All buffs current"
         end,

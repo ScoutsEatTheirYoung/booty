@@ -43,10 +43,10 @@ booty/
 ├── hud/
 │   └── init.lua          ImGui HUD: 60fps render callback + 10fps data gatherer (non-blocking)
 ├── bot/
-│   ├── init.lua          Bot entry point — shared states (IDLE/INIT/FOLLOW/GUILDHALLPORT), dispatches by name
+│   ├── init.lua          Bot entry point — shared states (IDLE/JOINING/ESCORT/LEASH/PORTING), dispatches by name
 │   ├── fsm.lua           FSM engine: changeState(), update(), /setstate slash command
-│   ├── shaman.lua        Shaman class states (SETUP/MELEE/FOLLOWANDEXP/MAKECAMPANDEXP)
-│   ├── mage.lua          Mage class states (SETUP/MELEE/FOLLOWANDEXP/MAKECAMPANDEXP)
+│   ├── shaman.lua        Shaman class states (STARTUP/MELEE/ASSIST/CAMP/BUFFTEST)
+│   ├── mage.lua          Mage class states (STARTUP/MELEE/ASSIST/CAMP/BUFFTEST)
 │   ├── travel.lua        Guild hall port utility: ascendantGuildHallPort(porterName, location)
 │   └── bricks/
 │       ├── combatActions.lua    attackOn, disengage, sendPet, engageTarget, assistPC
@@ -57,7 +57,7 @@ booty/
 │       ├── movementActions.lua  navFanFollow, navToTarget, navToPC, navToPoint, navToSpawn, navToGuildhallPort
 │       ├── movementUtils.lua    distanceTo, standIfNeeded
 │       ├── spellActions.lua     memorizeSpell, castSpell, castSpellInGem, castSummonPet
-│       ├── spellUtils.lua       findGemForSpell, isSpellMemmed, isOnBar, isSpellReady, willLand, hasManaForSpell
+│       ├── spellUtils.lua       findGemForSpell, isSpellMemmed, isOnBar, isSpellReady, hasManaForSpell
 │       ├── buffActions.lua      castBuffList(BUFFS, gemSlot), cureGroup
 │       ├── healActions.lua      healGroup(healName, healGem, healPct, emergencyPct, leader)
 │       ├── idleActions.lua      medAndBuff(buffList, gemSlot) — sit/med + cast buff list
@@ -187,7 +187,6 @@ spellUtils.findGemForSpell(spellName)   -- gem slot number or nil
 spellUtils.isSpellMemmed(spellName)     -- boolean
 spellUtils.isOnBar(spellName)           -- boolean
 spellUtils.isSpellReady(spellName)      -- boolean
-spellUtils.willLand(spellName)          -- WillLand() > 0 (buff slot number, not bool!)
 spellUtils.hasManaForSpell(spellName)   -- boolean
 ```
 
@@ -195,7 +194,7 @@ spellUtils.hasManaForSpell(spellName)   -- boolean
 ```lua
 spellActions.memorizeSpell(gemNum, spellName)
 spellActions.castSpell(spellName)
-spellActions.castSpellInGem(spellName, gemNum, minManaPct)  -- minManaPct optional: skip if below this % mana
+spellActions.castSpellInGem(spellName, gemNum)
 spellActions.castSummonPet(spellName, gemNum, reagent)
 spellActions.guardCasting(emergencyPct)
 -- emergencyPct: allow cast interrupt if group member below this % HP
@@ -208,15 +207,8 @@ spellActions.guardCasting(emergencyPct)
 local BUFFS = {
     { spellName = "Inner Fire", refreshTime = 600, targets = { "self", "group" } },
 }
-buffActions.castBuffList(BUFFS, gemSlot)   -- iterates targets, checks willLand, casts if needed
-buffActions.cureGroup(spellName, gemSlot, debuffCheck)  -- cure first group member that passes debuffCheck(spawn)
-buffActions.cureGroupDebuffs(diseaseSpell, poisonSpell, cureGem)
--- two-pass scan: disease across whole group first, then poison
--- uses Me.Diseased()/Poisoned() and Group.Member(i).Diseased()/Poisoned() — no targeting needed
--- NOTE: pets require targeting to read buff data and are NOT included
+buffActions.castBuffList(BUFFS, gemSlot)   -- iterates targets, casts if needed
 ```
-
-`willLand` returns `false` when buff is already active (not expired) — correct, skip casting.
 
 ### healActions.lua
 ```lua

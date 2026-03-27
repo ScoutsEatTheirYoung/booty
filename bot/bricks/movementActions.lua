@@ -11,17 +11,36 @@ local movementActions = {}
 -- else, the function falls through and issues its own command.
 -- ============================================================
 local navOwner = nil
+local navStuck = { x = 0, y = 0, since = 0 }
+local NAV_STUCK_TIMEOUT = 3.0  -- seconds without movement before cycling nav
 
 local function isMyNav(tag)
     if not mq.TLO.Navigation.Active() then
         navOwner = nil
         return false
     end
-    return navOwner == tag
+    if navOwner ~= tag then return false end
+
+    -- Stuck detection: if position hasn't changed in NAV_STUCK_TIMEOUT seconds,
+    -- stop nav and return false so the caller re-issues the command next tick.
+    local x, y = mq.TLO.Me.X(), mq.TLO.Me.Y()
+    local dx, dy = x - navStuck.x, y - navStuck.y
+    if math.sqrt(dx * dx + dy * dy) > 2.0 then
+        navStuck.x, navStuck.y, navStuck.since = x, y, os.clock()
+    elseif (os.clock() - navStuck.since) >= NAV_STUCK_TIMEOUT then
+        mq.cmd('/squelch /nav stop')
+        navOwner = nil
+        return false
+    end
+
+    return true
 end
 
 local function claimNav(tag)
     navOwner = tag
+    navStuck.x = mq.TLO.Me.X()
+    navStuck.y = mq.TLO.Me.Y()
+    navStuck.since = os.clock()
 end
 
 -- ============================================================

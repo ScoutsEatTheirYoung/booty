@@ -1,98 +1,130 @@
-local mq           = require('mq')
-local utils        = require('booty.utils')
 local targetActions = require('booty.bot.bricks.targetActions')
-local targetUtils  = require('booty.bot.bricks.targetUtils')
-local spellActions = require('booty.bot.bricks.spellActions')
-local spellUtils   = require('booty.bot.bricks.spellUtils')
+local spellActions  = require('booty.bot.bricks.spellActions')
+local buffUtils     = require('booty.bot.bricks.buffUtils')
+local targetUtils   = require('booty.bot.bricks.targetUtils')
 
 local buffActions = {}
 
+-- Cursor across the unique-spawn queue. Persists between ticks so we don't
+-- re-target spawn[1] every tick while cycling through the group.
+local _cursorIdx  = 1
+local _cycleCount = 0   -- how many spawns fully checked this cycle
+
 -- ============================================================
--- Pure checks  (does*)
+-- Private helpers
 -- ============================================================
 
---- True if target spawn needs the buff (missing or expires within refreshTime seconds).
----@param target spawn
+--- Build an ordered, deduplicated list of all target spawns across the buff list.
+---@param buffList BuffEntry[]
+---@return {spawn: MQSpawn, label: string}[]
+local function buildSpawnQueue(buffList)
+    local seen  = {}
+    local queue = {}
+    for _, entry in ipairs(buffList) do
+        local resolved = targetUtils.resolveTargets(entry.targets or {})
+        for _, t in ipairs(resolved) do
+            if t.spawn and t.spawn() then
+                local id = t.spawn.ID()
+                if not seen[id] then
+                    seen[id] = true
+                    table.insert(queue, { spawn = t.spawn, label = t.label })
+                end
+            end
+        end
+    end
+    return queue
+end
+
+--- Find the first buff entry that applies to spawn and that spawn currently needs.
+--- Only call this after spawn is targeted and BuffsPopulated.
+---@param spawn MQSpawn|MQTarget
+---@param buffList BuffEntry[]
+---@return {spellName: string, label: string}|nil
+local function findNeededBuffForSpawn(spawn, buffList)
+    if not spawn or not spawn() then return nil end
+    local spawnID = spawn.ID()
+    for _, entry in ipairs(buffList) do
+        local resolved = targetUtils.resolveTargets(entry.targets or {})
+        for _, t in ipairs(resolved) do
+            if t.spawn and t.spawn() and t.spawn.ID() == spawnID then
+                if buffUtils.spawnNeedsBuff(spawn, entry.spellName, entry.refreshTime or 0) then
+                    return { spellName = entry.spellName, label = t.label }
+                end
+            end
+        end
+    end
+    return nil
+end
+
+--- Mem spellName into spellGem if needed, then cast on current target.
 ---@param spellName string
----@param refreshTime number  seconds
----@return boolean
-local function doesTargetNeedBuff(target, spellName, refreshTime)
-    if not target or not target() then return false end
-    local b = target.Buff(spellName)
-    if not b() then return true end
-    local timeLeft = (b.Duration and b.Duration.TotalSeconds and b.Duration.TotalSeconds())
-    if not timeLeft then return false end  -- duration unreadable (e.g. pet) — buff exists, skip recast
-    return timeLeft <= refreshTime
+---@param spellGem integer
+---@param label string
+---@return boolean, string
+local function castOnCurrentTarget(spellName, spellGem, label)
+    local c, r = spellActions.castSpellInGem(spellName, spellGem)
+    if c then return true, string.format("Buffing %s: %s", label, r) end
+    return false, r
 end
 
 -- ============================================================
 -- Actors  (cast*)
 -- ============================================================
 
---- Cycle through buffList, one action per tick. Returns true, reason if action taken.
+--- Cycle through buffList and cast any needed buffs. One action per tick.
+---
+--- Each tick:
+---   1. Guard any in-progress cast.
+---   2. Target the spawn at the cursor position; wait for BuffsPopulated.
+---   3. Check all buff entries that apply to that spawn.
+---   4. Cast the first needed buff, or advance the cursor if all are current.
+---   5. When all spawns have been checked with nothing needed, return false.
 ---
 --- buffList entry format:
 ---   { spellName = "Spirit of Wolf", refreshTime = 300, targets = {"group"} }
 ---
---- targets: "self", "pet", "group" (all members + pets), or a PC name.
---- spellGem: gem slot to use when the spell needs to be memorized.
 ---@param buffList BuffEntry[]
 ---@param spellGem integer  Gem slot to use when the spell needs to be memorized
 ---@return boolean, string
 function buffActions.castBuffList(buffList, spellGem)
-    if not buffList or #buffList == 0 then return false, 'Buff list is empty' end
-    if not spellGem or spellGem <= 0 then return false, 'Invalid spell gem slot' end
+    if not buffList or #buffList == 0 then return false, 'Buff list empty' end
+    if not spellGem or spellGem <= 0 then return false, 'Invalid gem slot' end
 
-    if mq.TLO.Me.Casting() then
-        return true, 'Casting in progress'
-    end
-    if mq.TLO.Window('SpellBookWnd').Open() then
-        return true, 'Spellbook open'
-    end
+    local c, r = spellActions.guardCasting(nil)
+    if c then return c, r end
 
-    for _, entry in ipairs(buffList) do
-        local spellName   = entry.spellName
-        local refreshTime = entry.refreshTime or 0
-        local targets     = entry.targets or {}
+    local queue = buildSpawnQueue(buffList)
+    if #queue == 0 then return false, 'No buff targets' end
 
-        if not mq.TLO.Me.Book(spellName)() then
-            utils.fail(string.format("Missing spell from book: %s", spellName))
-            -- Skip this spell, try the next
-        else
-            local resolvedTargets = targetUtils.resolveTargets(targets)
-
-            for _, t in ipairs(resolvedTargets) do
-                if doesTargetNeedBuff(t.spawn, spellName, refreshTime) then
-                    local mc, mr = spellActions.memorizeSpell(spellGem, spellName)
-                    if mc then return mc, mr end
-                    local gem = spellUtils.findGemForSpell(spellName)
-                    if not gem then goto nexttarget end
-                    if not mq.TLO.Me.SpellReady(gem)() then
-                        return true, string.format("Waiting for %s to be ready", spellName)
-                    end
-
-                    -- Target them if not already
-                    local switched, switchReason = targetActions.targetSpawn(t.spawn)
-                    if switched then
-                        return true, switchReason  -- Let target land next tick
-                    end
-
-                    -- Check stacking before casting
-                    if not spellUtils.willLand(spellName) then
-                        utils.info(string.format("'%s' won't land on %s, skipping", spellName, t.label))
-                        goto nexttarget
-                    end
-
-                    mq.cmdf('/cast %d', gem)
-                    return true, string.format("Casting '%s' on %s", spellName, t.label)
-                end
-
-                ::nexttarget::
-            end
-        end
+    -- Clamp cursor if queue shrank (group member left, etc.)
+    if _cursorIdx > #queue then
+        _cursorIdx  = 1
+        _cycleCount = 0
     end
 
-    return false, 'All buffs current'
+    -- Full cycle complete — everyone checked, nothing needed
+    if _cycleCount >= #queue then
+        _cursorIdx  = 1
+        _cycleCount = 0
+        return false, 'All buffs current'
+    end
+
+    local current = queue[_cursorIdx]
+
+    -- Target this spawn and wait for buff data to populate
+    c, r = targetActions.targetSpawn(current.spawn)
+    if c then return c, r end
+
+    -- Targeted and populated — check all buff entries that apply to this spawn
+    local needed = findNeededBuffForSpawn(current.spawn, buffList)
+    if needed then
+        return castOnCurrentTarget(needed.spellName, spellGem, needed.label)
+    end
+
+    -- This spawn is fully buffed — advance the cursor (no tick consumed)
+    _cursorIdx  = (_cursorIdx % #queue) + 1
+    _cycleCount = _cycleCount + 1
+    return false, string.format('%s buffs current', current.label)
 end
 
 return buffActions

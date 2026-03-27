@@ -47,26 +47,29 @@ return function(cfg)
     end
 
     -- ============================================================
-    -- State: SETUP
-    -- Summon pet and cast initial buffs, then transition to FOLLOW.
+    -- State: STARTUP
+    -- Summon pet and cast initial buffs, then transition to ESCORT.
     -- ============================================================
-    fsm.states["SETUP"] = {
+    fsm.states["STARTUP"] = {
         onEnter = function()
             mq.cmd('/attack off')
         end,
         execute = function()
             local c, r
 
+            c, r = spellActions.guardCasting(nil)
+            if c then return c, r end
+
             if not combatUtils.hasPet() then
                 c, r = spellActions.castSummonPet(PET_SPELL, PET_GEM, PET_REAGENT)
                 if c then return c, r end
-                return false, r or "Waiting to summon pet"
+                return true, r or "Waiting to summon pet"
             end
 
             c, r = idleActions.medAndBuff(BUFFS, BUFF_GEM)
             if c then return c, r end
 
-            fsm.changeState("FOLLOW")
+            fsm.changeState("ESCORT")
             return false, "Setup complete"
         end,
     }
@@ -102,11 +105,11 @@ return function(cfg)
     }
 
     -- ============================================================
-    -- State: FOLLOWANDEXP
+    -- State: ASSIST
     -- Follow leader, pet-assist on everything leader engages.
     -- Med and buff when idle.
     -- ============================================================
-    fsm.states["FOLLOWANDEXP"] = {
+    fsm.states["ASSIST"] = {
         onEnter = function()
             timeLastNonIdleAction = os.clock()
         end,
@@ -153,11 +156,11 @@ return function(cfg)
     }
 
     -- ============================================================
-    -- State: MAKECAMPANDEXP
+    -- State: CAMP
     -- Snap camp, idle (med/buff) until combat reaches camp.
     -- Engages when: non-leader is pulled to camp, OR leader pulls within PULL_RADIUS.
     -- ============================================================
-    fsm.states["MAKECAMPANDEXP"] = {
+    fsm.states["CAMP"] = {
         onEnter = function()
             mq.cmd('/attack off')
             mq.cmd('/squelch /pet back off')
@@ -212,7 +215,10 @@ return function(cfg)
     -- ============================================================
     fsm.states["BUFFTEST"] = {
         execute = function()
-            local c, r = idleActions.medAndBuff(BUFFS, BUFF_GEM)
+            local c, r
+            c, r = spellActions.guardCasting(nil)
+            if c then return c, r end
+            c, r = idleActions.medAndBuff(BUFFS, BUFF_GEM)
             if c then return c, r end
             return false, "All buffs current"
         end,

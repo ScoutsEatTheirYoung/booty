@@ -42,14 +42,14 @@ fsm.states["IDLE"] = {
 }
 
 -- ============================================================
--- State: INIT (shared)
+-- State: JOINING (shared)
 -- Navigates to leader, requests group invite, accepts it.
--- Auto-transitions to FOLLOW once grouped.
+-- Auto-transitions to ESCORT once grouped.
 -- ============================================================
 local INVITE_COOLDOWN = 5   -- seconds between invite requests
 local INIT_CLOSE_DIST = 20  -- distance at which we request the invite
 
-fsm.states["INIT"] = {
+fsm.states["JOINING"] = {
     onEnter = function()
         mq.cmd('/attack off')
         mq.cmd('/squelch /pet back off')
@@ -57,7 +57,7 @@ fsm.states["INIT"] = {
     end,
     execute = function()
         if groupUtils.isGrouped() then
-            fsm.changeState("FOLLOW")
+            fsm.changeState("ESCORT")
             return
         end
         local c, r = groupActions.navGroupInvite(leaderID(), INVITE_COOLDOWN, INIT_CLOSE_DIST)
@@ -70,7 +70,7 @@ fsm.states["INIT"] = {
 }
 
 -- ============================================================
--- State: GUILDHALLPORT (shared)
+-- State: PORTING (shared)
 -- Params set by /guildport <porter> <location> before transitioning.
 -- ============================================================
 local guildHallPort = {
@@ -78,7 +78,7 @@ local guildHallPort = {
     location = nil,
 }
 
-fsm.states["GUILDHALLPORT"] = {
+fsm.states["PORTING"] = {
     onEnter = function()
         mq.cmd('/attack off')
         mq.cmd('/squelch /pet back off')
@@ -89,7 +89,7 @@ fsm.states["GUILDHALLPORT"] = {
         end
         local c, r = travel.ascendantGuildHallPort(guildHallPort.porterName, guildHallPort.location)
         if c then return c, r end
-        fsm.changeState("FOLLOW")
+        fsm.changeState("ESCORT")
     end,
     onExit = function()
         mq.cmd('/squelch /nav stop')
@@ -101,13 +101,14 @@ fsm.states["GUILDHALLPORT"] = {
 mq.bind('/guildport', function(porter, location)
     guildHallPort.porterName = porter
     guildHallPort.location = location
-    fsm.changeState("GUILDHALLPORT")
+    fsm.changeState("PORTING")
 end)
 
 -- ============================================================
--- State: FOLLOW (shared)
+-- State: ESCORT (shared)
+-- Nav formation follow — non-blocking, allows spell casting while moving.
 -- ============================================================
-fsm.states["FOLLOW"] = {
+fsm.states["ESCORT"] = {
     onEnter = function()
         mq.cmd('/attack off')
         mq.cmd('/squelch /pet back off')
@@ -115,10 +116,39 @@ fsm.states["FOLLOW"] = {
     execute = function()
         local c, r = movementActions.navFanFollow(leaderID(), config.offset, config.followDist)
         if c then return c, r end
-        return false, "Following " .. config.leader
+        return false, "Escorting " .. config.leader
     end,
     onExit = function()
         mq.cmd('/squelch /nav stop')
+    end,
+}
+
+-- ============================================================
+-- State: LEASH (shared)
+-- Strict EQ /follow — stops everything and glues to leader.
+-- ============================================================
+fsm.states["LEASH"] = {
+    onEnter = function()
+        mq.cmd('/attack off')
+        mq.cmd('/squelch /nav stop')
+        mq.cmd('/squelch /pet back off')
+        local s = mq.TLO.Spawn('pc =' .. LEADER)
+        if s and s() then
+            mq.cmdf('/squelch /tar id %d', s.ID())
+            mq.cmd('/squelch /follow')
+        end
+    end,
+    execute = function()
+        local s = mq.TLO.Spawn('pc =' .. LEADER)
+        if not s or not s() then
+            return false, 'Leader not found'
+        end
+        if s.Distance() > 30 then
+            mq.cmdf('/squelch /tar id %d', s.ID())
+            mq.cmd('/squelch /follow')
+            return true, 'Re-acquiring follow on ' .. LEADER
+        end
+        return false, 'Leashed to ' .. LEADER
     end,
 }
 
@@ -143,9 +173,9 @@ end
 -- ============================================================
 -- Main Loop
 -- ============================================================
-print(string.format('\ag[Bot]\aw Online as \ay%s\aw — /setstate <IDLE|FOLLOW|MELEE>', myName))
+print(string.format('\ag[Bot]\aw Online as \ay%s\aw — /setstate <IDLE|ESCORT|LEASH|ASSIST|CAMP|MELEE>', myName))
 
-fsm.changeState("INIT")
+fsm.changeState("JOINING")
 
 while true do
     fsm.update()

@@ -54,13 +54,6 @@ function spellUtils.isSpellReady(spellName)
     return mq.TLO.Me.SpellReady(gem)() == true
 end
 
---- Bool: spell will land on current target (checks stacking, immunity, etc.).
----@param spellName string
----@return boolean
-function spellUtils.willLand(spellName)
-    return (mq.TLO.Spell(spellName).WillLand() or 0) > 0
-end
-
 ---@param spellName string
 ---@return boolean
 function spellUtils.hasManaForSpell(spellName)

@@ -54,17 +54,17 @@ The FSM prints the reason only when it changes. This gives clean, readable statu
 without spam — you see exactly what the bot is doing or waiting for, one line at a time.
 
 ```
-[SETUP] Memorizing Minor Shielding into gem 1
-[SETUP] Casting 'Minor Shielding' on self
-[FOLLOWANDEXP] Walking with Alpha
-[FOLLOWANDEXP] Standing up for combat
-[FOLLOWANDEXP] Targeting Goblin Warrior
-[FOLLOWANDEXP] Pet sent to attack
-[FOLLOWANDEXP] In combat — pet attacking
-[FOLLOWANDEXP] Disengaged
-[FOLLOWANDEXP] Walking with Alpha
-[FOLLOWANDEXP] Sitting to med
-[FOLLOWANDEXP] Medding (72% mana)
+[STARTUP] Memorizing Minor Shielding into gem 1
+[STARTUP] Casting 'Minor Shielding' on self
+[ASSIST] Walking with Alpha
+[ASSIST] Standing up for combat
+[ASSIST] Targeting Goblin Warrior
+[ASSIST] Pet sent to attack
+[ASSIST] In combat — pet attacking
+[ASSIST] Disengaged
+[ASSIST] Walking with Alpha
+[ASSIST] Sitting to med
+[ASSIST] Medding (72% mana)
 ```
 
 ---
@@ -117,7 +117,7 @@ Bricks contain the actual decisions and commands. Each domain is split into a `*
 | `meleeUtils.lua` | Pure check: `getAssistTarget` (live NPC filter on a PC's target) |
 | `movementUtils.lua` | Pure checks: `distanceTo`, `standIfNeeded` |
 | `movementActions.lua` | Navigation: `navFanFollow`, `navToTarget`, `navToPC`, `navToPoint`, `navToSpawn`, `navToGuildhallPort` |
-| `spellUtils.lua` | Pure checks: `findGemForSpell`, `isSpellMemmed`, `isOnBar`, `isSpellReady`, `willLand`, `hasManaForSpell` |
+| `spellUtils.lua` | Pure checks: `findGemForSpell`, `isSpellMemmed`, `isOnBar`, `isSpellReady`, `hasManaForSpell` |
 | `spellActions.lua` | Spell casting: `memorizeSpell`, `castSpell`, `castSpellInGem`, `castSummonPet` |
 | `buffActions.lua` | Buff cycling: `castBuffList` — one target/spell per tick |
 | `groupUtils.lua` | Group state: `isGroupEngaged`, `isPCEngaged`, `getEngagedTarget`, `isGrouped`, `hasPendingInvite` |
@@ -193,8 +193,8 @@ local BUFFS = {
 ```lua
 return function(cfg)
     local LEADER, myOffset, FOLLOW_DIST = cfg.leader, cfg.offset, cfg.followDist
-    fsm.states["SETUP"]  = { execute = function() ... end }
-    fsm.states["MELEE"]  = { execute = function() ... end }
+    fsm.states["STARTUP"] = { execute = function() ... end }
+    fsm.states["MELEE"]   = { execute = function() ... end }
 end
 ```
 
@@ -214,10 +214,12 @@ local NAME_MODULES = {
 | Command | Effect |
 |---------|--------|
 | `/setstate IDLE` | Stop everything, wait |
-| `/setstate INIT` | Run to leader, request group invite |
-| `/setstate FOLLOW` | Fan-follow leader |
-| `/setstate SETUP` | Buff up, summon pet, then auto-transition to FOLLOW |
+| `/setstate JOINING` | Run to leader, request group invite |
+| `/setstate ESCORT` | Nav formation follow — non-blocking, allows casting while moving |
+| `/setstate LEASH` | Strict EQ `/follow` — glued to leader, stops everything else |
+| `/setstate STARTUP` | Buff up, summon pet, then auto-transition to ESCORT |
 | `/setstate MELEE` | Assist leader, approach target, fight |
-| `/setstate FOLLOWANDEXP` | Follow leader, assist on everything leader engages, med when idle |
-| `/setstate MAKECAMPANDEXP` | Snap camp at leader's position, hold it, assist when leader pulls |
+| `/setstate ASSIST` | Follow leader, assist on everything leader engages, med when idle |
+| `/setstate CAMP` | Snap camp at leader's position, hold it, assist when leader pulls |
 | `/setstate BUFFTEST` | Test buff cycle without combat |
+| `/guildport <porter> <loc>` | Port via guild hall, transition to PORTING state |

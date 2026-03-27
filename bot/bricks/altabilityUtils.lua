@@ -20,9 +20,8 @@ end
 ---@param aaName string
 ---@return boolean
 function altabilityUtils.isAAReady(aaName)
-    local ability = mqMe.AltAbility(aaName)
-    if not ability or not ability() then return false end
-    return ability.Ready() == true
+    if not altabilityUtils.hasAA(aaName) then return false end
+    return mq.TLO.Me.AltAbilityReady(aaName)() == true
 end
 
 return altabilityUtils

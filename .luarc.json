@@ -4,7 +4,7 @@
     "version": "LuaJIT"
   },
   "workspace": {
-    "library": ["../../mq-definitions"],
+    "library": ["../../mq-definitions", "/home/julian/dev/MQ2Camera"],
     "ignoreDir": [".git"]
   }
 }

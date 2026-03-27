@@ -18,6 +18,9 @@ function altabilityActions.castAA(aaName)
     if not altabilityUtils.hasAA(aaName) then
         return false, string.format("AA '%s' not owned", aaName)
     end
+    if mq.TLO.Me.Casting() then
+        return true, string.format("Casting '%s'", mq.TLO.Me.Casting.Name() or aaName)
+    end
     if not altabilityUtils.isAAReady(aaName) then
         return false, string.format("'%s' recharging", aaName)
     end

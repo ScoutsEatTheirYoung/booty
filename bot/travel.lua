@@ -25,10 +25,22 @@ function travel.ascendantGuildHallPort(porterName, location)
         return true, 'Zoning...'
     end
 
+    local zone = mq.TLO.Zone.ShortName()
+
+    -- Waiting to arrive in guild hall — hold until we're actually there
     if portPhase == PORT_PHASE.TOGUILDHALL then
+        if zone ~= 'guildlobby' then
+            return true, 'Waiting to zone to guild hall'
+        end
         portPhase = PORT_PHASE.NONE
-        -- Fall through — we're in guild hall now, continue to porter logic
-    elseif portPhase == PORT_PHASE.TODESTINATION then
+        -- Fall through to porter logic
+    end
+
+    -- Waiting to arrive at destination — hold until we've left guild hall
+    if portPhase == PORT_PHASE.TODESTINATION then
+        if zone == 'guildlobby' then
+            return true, string.format('Waiting to zone to %s', location)
+        end
         portPhase = PORT_PHASE.NONE
         return false, 'Arrived at destination'
     end
@@ -42,10 +54,11 @@ function travel.ascendantGuildHallPort(porterName, location)
         porterName = 'Liminal'
     end
 
-    if mq.TLO.Zone.ShortName() ~= 'guildlobby' then
+    -- Not in guild hall yet — cast Marked Passage and wait
+    if zone ~= 'guildlobby' then
         local c, r = altabilityActions.castAA('Marked Passage')
         if c then portPhase = PORT_PHASE.TOGUILDHALL end
-        return c, r
+        return true, r or 'Waiting for Marked Passage'
     end
 
     local porter = mq.TLO.Spawn('npc =' .. porterName)
@@ -56,14 +69,13 @@ function travel.ascendantGuildHallPort(porterName, location)
     c, r = targetActions.targetSpawn(porter)
     if c then return c, r end
 
-    -- Only say if we haven't already — prevents repeat /say while waiting for zone-out
-    -- Liminal uses an unknown hash string, so we can't automate the /say yet
+    -- Only say once — prevents repeat /say while waiting for zone-out
     if portPhase == PORT_PHASE.NONE then
-        local sayString = ""
-        if porterName:lower() == "liminal" then 
+        local sayString
+        if porterName:lower() == 'liminal' then
             sayString = string.format('/say travel %s', location:lower())
-        else 
-            sayString = string.format('/say %s', location:lower()) 
+        else
+            sayString = string.format('/say %s', location:lower())
         end
         mq.cmdf(sayString)
         portPhase = PORT_PHASE.TODESTINATION

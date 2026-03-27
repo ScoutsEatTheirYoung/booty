@@ -34,6 +34,7 @@ function spellActions.castSpell(spellName)
     if mq.TLO.Me.Casting() then
         return true, 'Casting ' .. mq.TLO.Me.Casting.Name()
     end
+    
     local gem = spellUtils.findGemForSpell(spellName)
     if not gem then
         return false, string.format("'%s' not memmed", spellName)
@@ -56,9 +57,6 @@ function spellActions.castSpellInGem(spellName, gemNum)
     if not spellName or spellName == "" then return false, "No spell configured" end
     if not mq.TLO.Me.Book(spellName)() then
         return false, string.format("'%s' not in spellbook", spellName)
-    end
-    if not spellUtils.hasManaForSpell(spellName) then
-        return false, string.format("Not enough mana for '%s'", spellName)
     end
     local c, r = spellActions.memorizeSpell(gemNum, spellName)
     if c then return c, r end
