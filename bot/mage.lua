@@ -13,17 +13,13 @@ local groupUtils      = require('booty.bot.bricks.groupUtils')
 -- ============================================================
 local PET_SPELL   = "Minor Conjuration: Water"
 local PET_REAGENT = "Malachite"
-local PET_GEM     = 2
-
 local BUFFS = {
     { spellName = "Major Shielding", refreshTime = 600, targets = { "self" } },
     { spellName = "Burnout II",      refreshTime = 600, targets = { "pet" } },
     { spellName = "Inferno Shield",  refreshTime = 60,  targets = { "group", "pet", "self" } },
 }
-local BUFF_GEM = 8
 
 local NUKE_NAME = "Blaze"
-local NUKE_GEM  = 1
 
 local CAST_RANGE  = 50
 local LOS_RANGE   = 25
@@ -61,12 +57,12 @@ return function(cfg)
             if c then return c, r end
 
             if not combatUtils.hasPet() then
-                c, r = spellActions.castSummonPet(PET_SPELL, PET_GEM, PET_REAGENT)
+                c, r = spellActions.castSummonPet(PET_SPELL, PET_REAGENT)
                 if c then return c, r end
                 return true, r or "Waiting to summon pet"
             end
 
-            c, r = idleActions.medAndBuff(BUFFS, BUFF_GEM)
+            c, r = idleActions.medAndBuff(BUFFS)
             if c then return c, r end
 
             fsm.changeState("ESCORT")
@@ -88,7 +84,7 @@ return function(cfg)
             if combatUtils.hasLiveTarget() then
                 c, r = movementActions.navToTarget(CAST_RANGE)
                 if c then return c, r end
-                c, r = spellActions.castSpellInGem(NUKE_NAME, NUKE_GEM)
+                c, r = spellActions.castAndMem(NUKE_NAME)
                 if c then return c, r end
                 return false, "In combat — pet attacking"
             end
@@ -129,7 +125,7 @@ return function(cfg)
                 if c then timeLastNonIdleAction = os.clock(); return c, r end
 
                 -- Priority 2: nuke
-                c, r = spellActions.castSpellInGem(NUKE_NAME, NUKE_GEM)
+                c, r = spellActions.castAndMem(NUKE_NAME)
                 if c then timeLastNonIdleAction = os.clock(); return c, r end
 
                 return false, "In combat — holding position"
@@ -142,7 +138,7 @@ return function(cfg)
 
             if (os.clock() - timeLastNonIdleAction) >= IDLE_THRESHOLD
                     and not groupUtils.isGroupEngaged() then
-                c, r = idleActions.medAndBuff(BUFFS, BUFF_GEM)
+                c, r = idleActions.medAndBuff(BUFFS)
                 if c then return c, r end
             end
 
@@ -184,7 +180,7 @@ return function(cfg)
                     c, r = movementActions.navForLoS(LOS_RANGE)
                     if c then return c, r end
 
-                    c, r = spellActions.castSpellInGem(NUKE_NAME, NUKE_GEM)
+                    c, r = spellActions.castAndMem(NUKE_NAME)
                     if c then return c, r end
 
                     return false, "Defending camp"
@@ -198,7 +194,7 @@ return function(cfg)
                 if c then return c, r end
             end
 
-            c, r = idleActions.medAndBuff(BUFFS, BUFF_GEM)
+            c, r = idleActions.medAndBuff(BUFFS)
             if c then return c, r end
 
             return false, "Holding camp"
@@ -218,7 +214,7 @@ return function(cfg)
             local c, r
             c, r = spellActions.guardCasting(nil)
             if c then return c, r end
-            c, r = idleActions.medAndBuff(BUFFS, BUFF_GEM)
+            c, r = idleActions.medAndBuff(BUFFS)
             if c then return c, r end
             return false, "All buffs current"
         end,

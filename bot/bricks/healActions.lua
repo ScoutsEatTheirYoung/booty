@@ -10,16 +10,15 @@ local healActions = {}
 --- Uses emergency threshold when group is engaged, normal threshold otherwise.
 --- One step per tick: mem → target → cast.
 ---@param healName string
----@param healGem integer
 ---@param healPct number        heal threshold out of combat
 ---@param emergencyPct number   heal threshold in combat
 ---@param leaderID integer      spawn ID of the leader — healed first
 ---@return boolean, string
-function healActions.healGroup(healName, healGem, healPct, emergencyPct, leaderID)
+function healActions.healGroup(healName, healPct, emergencyPct, leaderID)
     if not healName or healName == "" then return false, "No heal configured" end
 
     if not spellUtils.isOnBar(healName) then
-        return spellActions.memorizeSpell(healGem, healName)
+        return spellActions.memorizeSpell(healName)
     end
 
     -- Don't consume the tick if spell is on cooldown — let combat proceed
@@ -33,7 +32,7 @@ function healActions.healGroup(healName, healGem, healPct, emergencyPct, leaderI
         local name = spawn.Name() or '?'
         local c = targetActions.targetSpawn(spawn)
         if c then return true, string.format("Targeting %s to heal", name) end
-        c = spellActions.castSpellInGem(healName, healGem)
+        c = spellActions.castAndMem(healName)
         if c then return true, string.format("Healing %s (%d%%)", name, spawn.PctHPs() or 0) end
         return false, ""
     end

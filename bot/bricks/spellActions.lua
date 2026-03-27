@@ -8,20 +8,21 @@ local spellActions = {}
 -- Actors  (cast* / memorize*)
 -- ============================================================
 
---- Memorize spellName into gemNum.
---- Precondition: spellName must be in the spellbook and gemNum must be a valid slot.
----@param gemNum integer
+--- Memorize spellName into the least-recently-used gem slot.
+--- Precondition: spellName must be in the spellbook.
 ---@param spellName string
 ---@return boolean, string
-function spellActions.memorizeSpell(gemNum, spellName)
+function spellActions.memorizeSpell(spellName)
     if spellUtils.isOnBar(spellName) then
         return false, string.format("'%s' already on bar", spellName)
     end
     if mq.TLO.Window('SpellBookWnd').Open() then
         return true, string.format('Memorizing %s', spellName)
     end
-    mq.cmdf('/memspell %d "%s"', gemNum, spellName)
-    return true, string.format('Memorizing %s into gem %d', spellName, gemNum)
+    local gem = spellUtils.nextGem()
+    mq.cmdf('/memspell %d "%s"', gem, spellName)
+    spellUtils.onMemGem(gem)
+    return true, string.format('Memorizing %s into gem %d', spellName, gem)
 end
 
 --- Cast spellName (must already be memmed and ready) on current target.
@@ -34,7 +35,6 @@ function spellActions.castSpell(spellName)
     if mq.TLO.Me.Casting() then
         return true, 'Casting ' .. mq.TLO.Me.Casting.Name()
     end
-    
     local gem = spellUtils.findGemForSpell(spellName)
     if not gem then
         return false, string.format("'%s' not memmed", spellName)
@@ -46,25 +46,20 @@ function spellActions.castSpell(spellName)
         return true, string.format('Waiting for %s to be ready', spellName)
     end
     mq.cmdf('/cast %d', gem)
+    spellUtils.onCastGem(gem)
     return true, string.format('Casting %s', spellName)
 end
 
---- Mem spellName into gemNum if needed, then cast it. One step per tick.
+--- Mem spellName if needed, then cast it. One step per tick.
 ---@param spellName string
----@param gemNum integer
 ---@return boolean, string
-function spellActions.castSpellInGem(spellName, gemNum)
+function spellActions.castAndMem(spellName)
     if not spellName or spellName == "" then return false, "No spell configured" end
     if not mq.TLO.Me.Book(spellName)() then
         return false, string.format("'%s' not in spellbook", spellName)
     end
-    local c, r = spellActions.memorizeSpell(gemNum, spellName)
+    local c, r = spellActions.memorizeSpell(spellName)
     if c then return c, r end
-    local gem = spellUtils.findGemForSpell(spellName)
-    if not gem then return false, string.format("'%s' not on bar", spellName) end
-    if not mq.TLO.Me.SpellReady(gem)() then
-        return true, string.format('Waiting for %s to be ready', spellName)
-    end
     return spellActions.castSpell(spellName)
 end
 
@@ -83,20 +78,19 @@ function spellActions.guardCasting(emergencyPct)
     return false, ''
 end
 
---- Summon a pet. Mems the spell into gemNum if needed.
+--- Summon a pet. Mems the spell if needed.
 --- reagent is optional — pass nil if the spell needs no reagent.
 ---@param spellName string
----@param gemNum integer
 ---@param reagent string|nil
 ---@return boolean, string
-function spellActions.castSummonPet(spellName, gemNum, reagent)
+function spellActions.castSummonPet(spellName, reagent)
     if not mq.TLO.Me.Book(spellName)() then
         return false, string.format("'%s' not in spellbook", spellName)
     end
     if reagent and not mq.TLO.FindItem(reagent)() then
         return false, string.format("Missing reagent: %s", reagent)
     end
-    local c, r = spellActions.memorizeSpell(gemNum, spellName)
+    local c, r = spellActions.memorizeSpell(spellName)
     if c then return c, r end
     return spellActions.castSpell(spellName)
 end

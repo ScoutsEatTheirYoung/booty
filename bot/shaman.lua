@@ -23,15 +23,11 @@ local BUFFS = {
     { spellName = "Quickness",        refreshTime = 60,  targets = { "self", "group" } },
     { spellName = "Talisman of Tnarg", refreshTime = 600, targets = { "self", "group" } },
 }
-local BUFF_GEM = 8
-
 local HEAL_NAME          = "Greater Healing"
-local HEAL_GEM           = 2
 local HEAL_PCT           = 80
 local HEAL_EMERGENCY_PCT = 60
 
 local NUKE_NAME = "Winter's Roar"
-local NUKE_GEM  = 3
 
 local CAST_RANGE  = 50
 local LOS_RANGE   = 25
@@ -66,7 +62,7 @@ return function(cfg)
             local c, r
             c, r = spellActions.guardCasting(nil)
             if c then return c, r end
-            c, r = idleActions.medAndBuff(BUFFS, BUFF_GEM)
+            c, r = idleActions.medAndBuff(BUFFS)
             if c then return c, r end
             fsm.changeState("ESCORT")
             return false, "Setup complete"
@@ -126,7 +122,7 @@ return function(cfg)
             if c then return c, r end
 
             -- Priority 1: heal
-            c, r = healActions.healGroup(HEAL_NAME, HEAL_GEM, HEAL_PCT, HEAL_EMERGENCY_PCT, leaderID())
+            c, r = healActions.healGroup(HEAL_NAME, HEAL_PCT, HEAL_EMERGENCY_PCT, leaderID())
             if c then timeLastNonIdleAction = os.clock(); return c, r end
 
             -- Priority 2: cure disease / poison (full group + pets)
@@ -142,7 +138,7 @@ return function(cfg)
                 if c then timeLastNonIdleAction = os.clock(); return c, r end
 
                 -- Priority 4: nuke
-                c, r = spellActions.castSpellInGem(NUKE_NAME, NUKE_GEM)
+                c, r = spellActions.castAndMem(NUKE_NAME)
                 if c then timeLastNonIdleAction = os.clock(); return c, r end
 
                 return false, "In combat — holding position"
@@ -155,7 +151,7 @@ return function(cfg)
 
             if (os.clock() - timeLastNonIdleAction) >= IDLE_THRESHOLD
                     and not groupUtils.isGroupEngaged() then
-                c, r = idleActions.medAndBuff(BUFFS, BUFF_GEM)
+                c, r = idleActions.medAndBuff(BUFFS)
                 if c then return c, r end
             end
 
@@ -189,7 +185,7 @@ return function(cfg)
             if c then return c, r end
 
             -- Heals and cures always run regardless of combat state
-            c, r = healActions.healGroup(HEAL_NAME, HEAL_GEM, HEAL_PCT, HEAL_EMERGENCY_PCT, leaderID())
+            c, r = healActions.healGroup(HEAL_NAME, HEAL_PCT, HEAL_EMERGENCY_PCT, leaderID())
             if c then return c, r end
 
             -- c, r = buffActions.cureGroupDebuffs(CURE_DISEASE, CURE_POISON, CURE_GEM)
@@ -203,7 +199,7 @@ return function(cfg)
                     c, r = movementActions.navForLoS(LOS_RANGE)
                     if c then return c, r end
 
-                    c, r = spellActions.castSpellInGem(NUKE_NAME, NUKE_GEM)
+                    c, r = spellActions.castAndMem(NUKE_NAME)
                     if c then return c, r end
 
                     return false, "Defending camp"
@@ -217,7 +213,7 @@ return function(cfg)
                 if c then return c, r end
             end
 
-            c, r = idleActions.medAndBuff(BUFFS, BUFF_GEM)
+            c, r = idleActions.medAndBuff(BUFFS)
             if c then return c, r end
 
             return false, "Holding camp"
@@ -237,7 +233,7 @@ return function(cfg)
             local c, r
             c, r = spellActions.guardCasting(nil)
             if c then return c, r end
-            c, r = idleActions.medAndBuff(BUFFS, BUFF_GEM)
+            c, r = idleActions.medAndBuff(BUFFS)
             if c then return c, r end
             return false, "All buffs current"
         end,

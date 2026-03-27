@@ -56,13 +56,12 @@ local function findNeededBuffForSpawn(spawn, buffList)
     return nil
 end
 
---- Mem spellName into spellGem if needed, then cast on current target.
+--- Mem spellName if needed, then cast on current target.
 ---@param spellName string
----@param spellGem integer
 ---@param label string
 ---@return boolean, string
-local function castOnCurrentTarget(spellName, spellGem, label)
-    local c, r = spellActions.castSpellInGem(spellName, spellGem)
+local function castOnCurrentTarget(spellName, label)
+    local c, r = spellActions.castAndMem(spellName)
     if c then return true, string.format("Buffing %s: %s", label, r) end
     return false, r
 end
@@ -84,11 +83,9 @@ end
 ---   { spellName = "Spirit of Wolf", refreshTime = 300, targets = {"group"} }
 ---
 ---@param buffList BuffEntry[]
----@param spellGem integer  Gem slot to use when the spell needs to be memorized
 ---@return boolean, string
-function buffActions.castBuffList(buffList, spellGem)
+function buffActions.castBuffList(buffList)
     if not buffList or #buffList == 0 then return false, 'Buff list empty' end
-    if not spellGem or spellGem <= 0 then return false, 'Invalid gem slot' end
 
     local c, r = spellActions.guardCasting(nil)
     if c then return c, r end
@@ -118,7 +115,7 @@ function buffActions.castBuffList(buffList, spellGem)
     -- Targeted and populated — check all buff entries that apply to this spawn
     local needed = findNeededBuffForSpawn(current.spawn, buffList)
     if needed then
-        return castOnCurrentTarget(needed.spellName, spellGem, needed.label)
+        return castOnCurrentTarget(needed.spellName, needed.label)
     end
 
     -- This spawn is fully buffed — advance the cursor (no tick consumed)
