@@ -1,0 +1,58 @@
+[Sequence] MageRoot
+├── [Selector] Group Setup
+│   ├── [Leaf] isGrouped
+│   └── [Sequence] Join Group
+│       ├── [Leaf] goToLeader
+│       ├── [Selector] Obtain Invite
+│       │   ├── [Leaf] hasPendingInvite
+│       │   └── [Leaf] RequestInvite
+│       └── [Leaf] acceptInvitationFromLeader
+└── [Selector] Main
+    ├── [Gate] If_Engaged
+    │   └── [Sequence] Combat
+    │       ├── [Leaf] assistLeader
+    │       └── [MemSequence] Cast_Routine(nukeSpell)
+    │           ├── [Leaf] IsKnown(nukeSpell)
+    │           ├── [Leaf] HasMana(nukeSpell)
+    │           ├── [Selector] Ensure_Memorized(nukeSpell)
+    │           │   ├── [Leaf] IsMemorized(nukeSpell)
+    │           │   └── [Leaf] MemSpell(nukeSpell)
+    │           ├── [Leaf] IsReady(nukeSpell)
+    │           └── [Leaf] ExecuteCast(nukeSpell)
+    └── [Sequence] Idle
+        ├── [Leaf] followLeader
+        ├── [Selector] Pet_OK
+        │   ├── [Leaf] hasPet
+        │   └── [Sequence] summonPet
+        │       ├── [Inverter] NoPet
+        │       │   └── [Leaf] hasPet
+        │       ├── [Leaf] IsKnown(petSpell)
+        │       ├── [Leaf] hasReagent(petReagent)
+        │       └── [MemSequence] Cast_Routine(petSpell)
+        │           ├── [Leaf] IsKnown(petSpell)
+        │           ├── [Leaf] HasMana(petSpell)
+        │           ├── [Selector] Ensure_Memorized(petSpell)
+        │           │   ├── [Leaf] IsMemorized(petSpell)
+        │           │   └── [Leaf] MemSpell(petSpell)
+        │           ├── [Leaf] IsReady(petSpell)
+        │           └── [Leaf] ExecuteCast(petSpell)
+        └── [Cooldown] GroupBuffCooldown
+            └── [Sequence] Group_Buff_Cycle
+                ├── [Leaf] GenerateBuffQueue
+                ├── [Leaf] PeekNextBuff
+                ├── [AlwaysSucceed] Try_Process_Buff
+                │   └── [Sequence] Target_Check_Cast
+                │       ├── [Leaf] TargetIdAndSync(BuffTargetID)
+                │       ├── [Sequence] IsBuffNeededOnTarget
+                │       │   ├── [Leaf] StacksOnTarget(CurrentBuffSpell)
+                │       │   └── [Inverter] Under Threshold
+                │       │       └── [Leaf] HasBuff
+                │       └── [MemSequence] Cast_Routine(CurrentBuffSpell)
+                │           ├── [Leaf] IsKnown(CurrentBuffSpell)
+                │           ├── [Leaf] HasMana(CurrentBuffSpell)
+                │           ├── [Selector] Ensure_Memorized(CurrentBuffSpell)
+                │           │   ├── [Leaf] IsMemorized(CurrentBuffSpell)
+                │           │   └── [Leaf] MemSpell(CurrentBuffSpell)
+                │           ├── [Leaf] IsReady(CurrentBuffSpell)
+                │           └── [Leaf] ExecuteCast(CurrentBuffSpell)
+                └── [Leaf] PopBuffQueue

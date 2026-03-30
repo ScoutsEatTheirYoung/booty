@@ -1,3 +1,4 @@
+local mq            = require('mq')
 local targetActions = require('booty.bot.bricks.targetActions')
 local spellActions  = require('booty.bot.bricks.spellActions')
 local buffUtils     = require('booty.bot.bricks.buffUtils')
@@ -37,17 +38,22 @@ end
 
 --- Find the first buff entry that applies to spawn and that spawn currently needs.
 --- Only call this after spawn is targeted and BuffsPopulated.
+--- Uses mq.TLO.Target for buff reads — reliable for pets, PCs, and NPCs.
 ---@param spawn MQSpawn|MQTarget
 ---@param buffList BuffEntry[]
 ---@return {spellName: string, label: string}|nil
 local function findNeededBuffForSpawn(spawn, buffList)
     if not spawn or not spawn() then return nil end
     local spawnID = spawn.ID()
+    local mqTarget = mq.TLO.Target
     for _, entry in ipairs(buffList) do
         local resolved = targetUtils.resolveTargets(entry.targets or {})
         for _, t in ipairs(resolved) do
             if t.spawn and t.spawn() and t.spawn.ID() == spawnID then
-                if buffUtils.spawnNeedsBuff(spawn, entry.spellName, entry.refreshTime or 0) then
+                local b        = mqTarget.Buff(entry.spellName)
+                local timeLeft = (b() and b.Duration and b.Duration.TotalSeconds and b.Duration.TotalSeconds()) or 0
+                local needsBuff = not b() or timeLeft < (entry.refreshTime or 0)
+                if needsBuff and (mq.TLO.Spell(entry.spellName).WillLand() or 0) > 0 then
                     return { spellName = entry.spellName, label = t.label }
                 end
             end
