@@ -1,32 +1,34 @@
-local mq = require('mq')
+local mq    = require('mq')
 local utils = require('booty.utils')
-
 
 local name = mq.TLO.Me.Name()
 
-local startTrees = {
-    Beta = require('booty.bot.bt.trees.shaman'),
+local characters = {
+    Beta = {
+        config = require('booty.bot.bt.configs.shaman'),
+        tree   = require('booty.bot.bt.trees.shaman'),
+    },
 }
 
-if not startTrees[name] then
-    utils.error(string.format("No behavior tree defined for character '%s'. Please add one to bot/bt/trees and update bot/init.lua.", name))
+if not characters[name] then
+    utils.error(string.format(
+        "No behavior tree defined for '%s'. Add an entry to bot/init.lua.",
+        name))
     return
 end
 
--- Initialize the shared game state
 local context = {
-    leaderName = "Alpha",  -- Replace with your actual tank's name
-    group = {
-        lastInviteFrom = nil,
-    },
-    combat = {
-        mode = "Walk",  -- Default combat mode, can be changed by behavior tree
-    }
+    leaderName = "Alpha",
+    group  = { lastInviteFrom = nil },
+    combat = { mode = "Walk" },
 }
-local startTree = startTrees[name](context)
 
-mq.event('CatchInvite', '#1# invites you to join a group.', function(_, inviter_name)
-    context.group.lastInviteFrom = inviter_name
+local char = characters[name]
+char.config(context)
+local startTree = char.tree
+
+mq.event('CatchInvite', '#1# invites you to join a group.', function(_, inviterName)
+    context.group.lastInviteFrom = inviterName
 end)
 
 local lastStatus = nil

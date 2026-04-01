@@ -1,14 +1,7 @@
-local sequence = require('booty.bot.bt.composites.sequence')
-local buff     = require('booty.bot.bt.leaves.buff')
-local check    = require('booty.bot.bt.leaves.check')
+local sequence     = require('booty.bot.bt.composites.sequence')
+local actionSpells = require('booty.bot.bt.actions.spells')
 
-local function GroupBuffTree()
-    return sequence:new("Maintain_Group_Buffs_Phase", {
-        check.notNil("buff.list"), -- ensure we have a buff list to work with
-        
-    })
-        
-
-end
-
-return GroupBuffTree
+return sequence:new("Group_Buff_Phase", {
+    actionSpells.ensureQueueExists(),
+    actionSpells.keepUp(),
+})

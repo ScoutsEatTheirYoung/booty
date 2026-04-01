@@ -1,8 +1,9 @@
-local Leaf  = require('booty.bot.bt.core.leaf')
-local State = require('booty.bot.bt.core.state')
-local mq    = require('mq')
+local Action = require('booty.bot.bt.core.action')
+local Sensor = require('booty.bot.bt.core.sensor')
+local State  = require('booty.bot.bt.core.state')
+local mq     = require('mq')
 
-local buff = {}
+local spells = {}
 
 -- Returns the gem slot (1-12) that spellName is memmed in, or nil.
 local function findGem(spellName)
@@ -23,15 +24,15 @@ local function needsBuff(spawnID, spellName, refreshTime)
     return (b.Duration() * 6) < refreshTime
 end
 
--- Expands the buff config into a flat list of { spawnID, spellName, label, refreshTime }.
--- Rebuilt each tick so group changes (joins, leaves, pets) are reflected immediately.
+-- Expands context.buff.list into a flat list of { spawnID, spellName, label, refreshTime }.
+-- Rebuilt each tick so group roster changes are reflected immediately.
 --
 -- "self"  → your character
 -- "pet"   → your pet
 -- "group" → each other group member (PC) + their pet
-local function buildWorkList(buffs)
+local function buildWorkList(buffList)
     local list = {}
-    for _, entry in ipairs(buffs) do
+    for _, entry in ipairs(buffList) do
         for _, target in ipairs(entry.targets or {}) do
             local spellName   = entry.spellName
             local refreshTime = entry.refreshTime or 0
@@ -64,7 +65,6 @@ local function buildWorkList(buffs)
                             spawnID   = m.ID(),
                             label     = memberName,
                         })
-                        -- Get their pet via spawn lookup (groupmember has no .Pet field)
                         local ms = mq.TLO.Spawn('pc =' .. memberName)
                         if ms() then
                             local petID = ms.Pet.ID()
@@ -84,54 +84,22 @@ local function buildWorkList(buffs)
     return list
 end
 
-function buff.ensureQueueExists()
-    return Leaf:new("EnsureBuffQueueExists", function(_, context)
-        if context.buff.queue == nil then
-            context.buff.queue = buildWorkList(context.buff.list)
-            return State.SUCCESS, "Buff queue initialized with " .. #context.buff.queue .. " entries"
-        elseif #context.buff.queue >= 0 then
-            return State.SUCCESS, "Buff queue already exists with " .. #context.buff.queue .. " entries"
-        end
-        return State.FAILURE, "Buff queue doesn't exist and config is empty, nothing to do"
-    end)
-end
-
-function buff.peakBuffQueue()
-    return Leaf:new("PeakBuffQueue", function(_, context)
-        local queue = context.buff.queue
-        if #queue > 0 then
-            local nextBuff = queue[1]
-            return State.SUCCESS, "Next buff: " .. nextBuff.spellName .. " on " .. nextBuff.label
-        end
-        return State.FAILURE, "Buff queue is empty"
-    end)
-end
-
--- Returns a leaf that keeps all buffs in the list active.
---
--- Each tick:
---   1. If currently casting → RUNNING (wait for it to land)
---   2. Scan work list for the first (spell, target) that needs a buff AND is ready to cast
---   3. If target not selected → issue /tar, RUNNING
---   4. If target selected → issue /cast, RUNNING
---   5. All buffs satisfied → FAILURE (caller's Selector falls through to next branch)
---
--- FAILURE is the "nothing to do" signal, not an error. The caller decides what to do next.
----@param buffs {spellName:string, refreshTime:number, targets:string[]}[]
----@return Leaf
-function buff.keepUp(buffs)
-    return Leaf:new("BuffKeepUp", function()
-        -- Phase 1: wait for any in-progress cast
+-- Scans context.buff.list each tick and casts the first buff that is missing or
+-- expiring. Returns RUNNING while targeting or casting, FAILURE when all buffs
+-- are satisfied (lets the Selector fall through to the next branch).
+function spells.keepUp()
+    return Action:new("[A]_Buff_Keep_Up", function(_, context)
         if mq.TLO.Me.Casting() then
             return State.RUNNING, "Casting " .. (mq.TLO.Me.Casting() or "spell")
         end
 
-        -- Phase 2: scan for the first buff that needs casting and is ready
-        local workList = buildWorkList(buffs)
+        local buffList = context.buff and context.buff.list
+        if not buffList then return State.FAILURE, "No buff list in context" end
+
+        local workList = buildWorkList(buffList)
         for _, item in ipairs(workList) do
             if needsBuff(item.spawnID, item.spellName, item.refreshTime) then
                 local gem = findGem(item.spellName)
-                -- Skip if spell not memmed or gem is on cooldown
                 if gem and mq.TLO.Me.SpellReady(gem)() then
                     if mq.TLO.Target.ID() ~= item.spawnID then
                         mq.cmdf('/tar id %d', item.spawnID)
@@ -147,4 +115,30 @@ function buff.keepUp(buffs)
     end)
 end
 
-return buff
+-- Peeks at the front of context.buff.queue without consuming it.
+function spells.peekBuffQueue()
+    return Sensor:new("[S]_Peek_Buff_Queue", function(_, context)
+        local queue = context.buff and context.buff.queue
+        if not queue or #queue == 0 then
+            return State.FAILURE, "Buff queue is empty"
+        end
+        local next = queue[1]
+        return State.SUCCESS, "Next buff: " .. next.spellName .. " on " .. next.label
+    end)
+end
+
+-- Initializes context.buff.queue from context.buff.list if it doesn't exist yet.
+function spells.ensureQueueExists()
+    return Action:new("[A]_Ensure_Buff_Queue_Exists", function(_, context)
+        if not context.buff or not context.buff.list then
+            return State.FAILURE, "No buff list in context"
+        end
+        if context.buff.queue == nil then
+            context.buff.queue = buildWorkList(context.buff.list)
+            return State.SUCCESS, "Buff queue initialized (" .. #context.buff.queue .. " entries)"
+        end
+        return State.SUCCESS, "Buff queue already exists (" .. #context.buff.queue .. " entries)"
+    end)
+end
+
+return spells
