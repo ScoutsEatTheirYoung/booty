@@ -41,7 +41,7 @@ local root = bt.Sequence("MageRoot", {
             bt.Cooldown("GroupBuffCooldown", 10000,
                 buff.MaintainGroupBuffs(BUFFS)
             ),
-        }),
+        })
 
     }),
 })

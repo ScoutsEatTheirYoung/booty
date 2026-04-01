@@ -5,6 +5,14 @@
     "~/wine-eq/drive_c/MQ2/lua",
     "/home/julian/.config/Code/User/globalStorage/zenithcodeforge.mq-defs/file-downloader-downloads/macroquest/mq-definitions-master"
   ],
+  "Lua.workspace.ignoreDir": [
+    ".vscode",
+    ".git",
+    ".claude",
+    "logs",
+    "bot/old",
+    "**/*.bak"
+  ],
   "Lua.diagnostics.globals": [
     "mq",
     "eq",
@@ -15,5 +23,8 @@
     "mq2zone",
   ],
   "Lua.codeLens.enable": true,
+  "Lua.diagnostics.workspaceDelay": 3000,
+  "Lua.diagnostics.workspaceRate": 25,
+  "Lua.workspace.preloadFileSize": 150,
   "mq-defs.shaKey": "e9b956e4abd48b2a6c4f7c9cdae1cc5a0e6f2170"
 }
