@@ -16,8 +16,8 @@ end
 
 function group.hasPendingInvite()
     return Sensor:new("[S]_Has_Pending_Invite", function()
-        if mq.TLO.Window("ConfirmationDialogBox").Open() == "TRUE" then
-            return State.SUCCESS, "Pending invite found"
+        if mq.TLO.Me.Invited() then
+            return State.SUCCESS, "Pending invite from " .. tostring(mq.TLO.Me.Invited())
         end
         return State.FAILURE, "No pending invite"
     end)

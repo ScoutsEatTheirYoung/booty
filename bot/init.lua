@@ -1,11 +1,12 @@
-local mq    = require('mq')
-local utils = require('booty.utils')
+local mq         = require('mq')
+local utils      = require('booty.utils')
+local newContext = require('booty.bot.bt.contexts.default')
 
 local name = mq.TLO.Me.Name()
 
 local characters = {
     Beta = {
-        config = require('booty.bot.bt.configs.shaman'),
+        config = require('booty.bot.bt.contexts.shaman'),
         tree   = require('booty.bot.bt.trees.shaman'),
     },
 }
@@ -17,11 +18,8 @@ if not characters[name] then
     return
 end
 
-local context = {
-    leaderName = "Alpha",
-    group  = { lastInviteFrom = nil },
-    combat = { mode = "Walk" },
-}
+-- Shared context. Can be read and written by any node in the tree.
+local context = newContext("Alpha")
 
 local char = characters[name]
 char.config(context)

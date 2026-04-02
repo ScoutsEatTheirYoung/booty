@@ -1,11 +1,11 @@
-local sequence  = require('booty.bot.bt.composites.sequence')
-local selector  = require('booty.bot.bt.composites.selector')
-local invert    = require('booty.bot.bt.decorators.invert')
-local cooldown  = require('booty.bot.bt.decorators.cooldown')
-local sensorGroup  = require('booty.bot.bt.sensors.group')
-local actionGroup  = require('booty.bot.bt.actions.group')
-local actionNav    = require('booty.bot.bt.actions.nav')
-local actionCtrl   = require('booty.bot.bt.actions.control')
+local sequence    = require('booty.bot.bt.composites.sequence')
+local selector    = require('booty.bot.bt.composites.selector')
+local invert      = require('booty.bot.bt.decorators.invert')
+local cooldown    = require('booty.bot.bt.decorators.cooldown')
+local sensorGroup = require('booty.bot.bt.sensors.group')
+local actionGroup = require('booty.bot.bt.actions.group')
+local nav         = require('booty.bot.bt.actions.nav')
+local actionCtrl  = require('booty.bot.bt.actions.control')
 
 return sequence:new("Getting_Grouped_Phase", {
 
@@ -15,7 +15,7 @@ return sequence:new("Getting_Grouped_Phase", {
     ),
 
     -- APPROACH: navigate to leader, stops nav automatically on abort
-    actionNav:new("[A]_Approach_Leader"),
+    nav.toLeader(),
 
     -- HANDSHAKE LOOP: evaluate priorities every tick
     selector:new("Invite_Handler", {

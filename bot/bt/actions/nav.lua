@@ -2,21 +2,18 @@ local Node  = require('booty.bot.bt.core.node')
 local State = require('booty.bot.bt.core.state')
 local mq    = require('mq')
 
--- NavToLeader is a stateful Node subclass (not a plain Action leaf) because it
--- needs onExit to stop navigation when the tree moves on or aborts.
+-- Internal stateful Node subclass. Needs onExit to guarantee /nav stop fires
+-- whenever the tree moves on, succeeds, fails, or is aborted.
+---@class NavToLeaderNode : Node
+local NavToLeaderNode = {}
+setmetatable(NavToLeaderNode, { __index = Node })
+NavToLeaderNode.__index = NavToLeaderNode
 
----@class NavToLeader : Node
-local NavToLeader = {}
-setmetatable(NavToLeader, { __index = Node })
-NavToLeader.__index = NavToLeader
-
----@param name? string
----@return NavToLeader
-function NavToLeader:new(name)
-    return Node.new(self, name or "[A]_Nav_To_Leader") --[[@as NavToLeader]]
+function NavToLeaderNode:new(name)
+    return Node.new(self, name) --[[@as NavToLeaderNode]]
 end
 
-function NavToLeader:execute(context)
+function NavToLeaderNode:execute(context)
     if not context.leaderName then return State.FAILURE, "No leader name" end
 
     local leader = mq.TLO.Spawn('pc =' .. context.leaderName)
@@ -38,10 +35,17 @@ function NavToLeader:execute(context)
     return State.RUNNING, "Navigating to " .. context.leaderName
 end
 
-function NavToLeader:onExit()
+function NavToLeaderNode:onExit()
     if mq.TLO.Navigation.Active() then
         mq.cmd('/squelch /nav stop')
     end
 end
 
-return NavToLeader
+-- Public API
+local nav = {}
+
+function nav.toLeader()
+    return NavToLeaderNode:new("[A]_Nav_To_Leader")
+end
+
+return nav
