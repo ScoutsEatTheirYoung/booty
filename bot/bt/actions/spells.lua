@@ -88,7 +88,7 @@ end
 -- expiring. Returns RUNNING while targeting or casting, FAILURE when all buffs
 -- are satisfied (lets the Selector fall through to the next branch).
 function spells.keepUp()
-    return Action:new("[A]_Buff_Keep_Up", function(_, context)
+    local function execute(_, context)
         if mq.TLO.Me.Casting() then
             return State.RUNNING, "Casting " .. (mq.TLO.Me.Casting() or "spell")
         end
@@ -112,24 +112,28 @@ function spells.keepUp()
         end
 
         return State.FAILURE, "All buffs up"
-    end)
+    end
+
+    return Action:new("[A]_Buff_Keep_Up", { execute = execute })
 end
 
 -- Peeks at the front of context.buff.queue without consuming it.
 function spells.peekBuffQueue()
-    return Sensor:new("[S]_Peek_Buff_Queue", function(_, context)
+    local function evaluate(_, context)
         local queue = context.buff and context.buff.queue
         if not queue or #queue == 0 then
             return State.FAILURE, "Buff queue is empty"
         end
         local next = queue[1]
         return State.SUCCESS, "Next buff: " .. next.spellName .. " on " .. next.label
-    end)
+    end
+
+    return Sensor:new("[S]_Peek_Buff_Queue", evaluate)
 end
 
 -- Initializes context.buff.queue from context.buff.list if it doesn't exist yet.
 function spells.ensureQueueExists()
-    return Action:new("[A]_Ensure_Buff_Queue_Exists", function(_, context)
+    local function execute(_, context)
         if not context.buff or not context.buff.list then
             return State.FAILURE, "No buff list in context"
         end
@@ -138,7 +142,9 @@ function spells.ensureQueueExists()
             return State.SUCCESS, "Buff queue initialized (" .. #context.buff.queue .. " entries)"
         end
         return State.SUCCESS, "Buff queue already exists (" .. #context.buff.queue .. " entries)"
-    end)
+    end
+
+    return Action:new("[A]_Ensure_Buff_Queue_Exists", { execute = execute })
 end
 
 return spells

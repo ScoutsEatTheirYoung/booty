@@ -5,7 +5,7 @@ local mq     = require('mq')
 local group = {}
 
 function group.acceptInviteFromLeader()
-    return Action:new("[A]_Accept_Invite_From_Leader", function(_, context)
+    local function execute(_, context)
         local inviter    = context.group.lastInviteFrom
         local leaderName = context.leaderName
         if not leaderName then return State.FAILURE, "No leader name" end
@@ -17,18 +17,22 @@ function group.acceptInviteFromLeader()
         end
 
         return State.FAILURE, "Pending invite is not from leader"
-    end)
+    end
+
+    return Action:new("[A]_Accept_Invite_From_Leader", { execute = execute })
 end
 
 function group.dexLeaderForInvite()
-    return Action:new("[A]_Dex_Leader_For_Invite", function(_, context)
+    local function execute(_, context)
         if not context.leaderName then
             return State.FAILURE, "No leader name"
         end
 
         mq.cmdf('/dex %s /invite %s', context.leaderName, mq.TLO.Me.Name())
         return State.SUCCESS, "Sent invite request to " .. context.leaderName
-    end)
+    end
+
+    return Action:new("[A]_Dex_Leader_For_Invite", { execute = execute })
 end
 
 return group
