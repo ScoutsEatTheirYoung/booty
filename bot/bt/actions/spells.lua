@@ -7,7 +7,7 @@ local spells = {}
 
 -- Returns the gem slot (1-12) that spellName is memmed in, or nil.
 local function findGem(spellName)
-    for i = 1, 12 do
+    for i = 1, mq.TLO.Me.NumGems() do
         local gem = mq.TLO.Me.Gem(i)
         if gem() and gem.Name() == spellName then return i end
     end
